@@ -83,3 +83,51 @@
 - No live AWS S3 or PostgreSQL environment was available in this task. Production adapters and migrations compile, S3 error behavior is unit-tested, and the local adapter is covered by integration tests.
 - Expired/unconsumed object cleanup is intentionally outside Task 3; intent expiry prevents use but does not delete orphaned storage objects.
 - Image analysis processing remains intentionally deferred to Task 4.
+
+## Review Fix Round 1
+
+**Status:** DONE
+
+### Findings Resolved
+
+- Closed the aggregate-size bypass by rechecking the complete FILE snapshot at finalization. Initial snapshots sum all selected upload intents; later versions sum both retained `FileAsset` rows and new upload intents. Overflow or a configured-limit breach returns `413 UPLOAD_LIMIT_EXCEEDED`.
+- Added the ordered discriminated FILE-version request list:
+  - `{"kind":"EXISTING","fileId":"..."}`
+  - `{"kind":"UPLOAD","uploadIntentId":"..."}`
+- Persisted `displayOrder` directly from that combined list, so retained and new files can be freely interleaved.
+- Preserved the prior `fileIds` plus `uploadIntentIds` JSON request for compatibility; requests cannot mix the legacy and combined representations.
+- Added direct coverage proving a consumed intent cannot finalize either another material or another version.
+- Kept the approved MIME allowlist unchanged.
+
+### Changed Files
+
+- `src/main/java/com/example/newsmaterial/material/api/MaterialApi.java`
+- `src/main/java/com/example/newsmaterial/material/service/MaterialService.java`
+- `src/main/java/com/example/newsmaterial/upload/UploadIntentService.java`
+- `src/test/java/com/example/newsmaterial/file/FileAggregateLimitTest.java`
+- `src/test/java/com/example/newsmaterial/file/FileMaterialApiTest.java`
+- `src/test/java/com/example/newsmaterial/file/FileVersionHistoryTest.java`
+
+### RED / GREEN Evidence
+
+- Focused RED command: `./mvnw -Dtest=FileAggregateLimitTest,FileVersionHistoryTest,FileMaterialApiTest test`
+- RED result: 7 tests run, 4 failures:
+  - cross-request initial snapshot returned 201 instead of 413;
+  - retained-plus-new version returned 422 instead of 413;
+  - `[UPLOAD, EXISTING]` ordered request returned 422 instead of 201;
+  - consumed intent in the combined version request returned 422 instead of 409.
+- Focused GREEN result: 7 tests, 0 failures, 0 errors, 0 skipped.
+- Full verification: `git diff --check && ./mvnw clean verify`
+- Full result: 27 tests, 0 failures, 0 errors, 0 skipped; executable JAR produced.
+
+### Self-Review
+
+- Aggregate checks use configured limits and overflow-safe addition.
+- Combined selectors require exactly one ID matching their discriminator.
+- Existing file IDs are accepted only from the material's current snapshot; duplicate retained IDs remain invalid.
+- New intent ownership, expiry, object verification, distinctness, and one-use enforcement still run before version persistence.
+- Idempotency fingerprints include the ordered combined list, while identical retries replay the created version even after their intents become consumed.
+
+### Commit
+
+- `9dafafc` — `fix: enforce file snapshot limits and ordering`
