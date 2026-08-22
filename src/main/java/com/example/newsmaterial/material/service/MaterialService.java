@@ -1,23 +1,13 @@
 package com.example.newsmaterial.material.service;
 
 import com.example.newsmaterial.common.api.ApiException;
-import com.example.newsmaterial.material.api.MaterialApi.MaterialView;
-import com.example.newsmaterial.material.api.MaterialApi.TextMaterialRequest;
-import com.example.newsmaterial.material.api.MaterialApi.TextVersionContentView;
-import com.example.newsmaterial.material.api.MaterialApi.TextVersionRequest;
-import com.example.newsmaterial.material.api.MaterialApi.VersionSnapshotView;
-import com.example.newsmaterial.material.api.MaterialApi.VersionView;
-import com.example.newsmaterial.material.domain.Material;
-import com.example.newsmaterial.material.domain.MaterialType;
-import com.example.newsmaterial.material.domain.MaterialVersion;
-import com.example.newsmaterial.material.persistence.IdempotencyRecord;
-import com.example.newsmaterial.material.persistence.IdempotencyRecordRepository;
-import com.example.newsmaterial.material.persistence.MaterialRepository;
-import com.example.newsmaterial.material.persistence.MaterialVersionRepository;
-import com.example.newsmaterial.project.ProjectRepository;
-import com.example.newsmaterial.project.ReportingProject;
-import com.example.newsmaterial.security.AppUser;
-import com.example.newsmaterial.security.UserRepository;
+import com.example.newsmaterial.file.*;
+import com.example.newsmaterial.material.api.MaterialApi.*;
+import com.example.newsmaterial.material.domain.*;
+import com.example.newsmaterial.material.persistence.*;
+import com.example.newsmaterial.project.*;
+import com.example.newsmaterial.security.*;
+import com.example.newsmaterial.upload.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,145 +16,94 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 public class MaterialService {
-    private static final String CREATE_TEXT = "CREATE_TEXT";
-    private static final String CREATE_VERSION = "CREATE_VERSION";
+    private static final String CREATE_TEXT="CREATE_TEXT", CREATE_FILE="CREATE_FILE", CREATE_VERSION="CREATE_VERSION";
     private final MaterialRepository materials;
     private final MaterialVersionRepository versions;
     private final IdempotencyRecordRepository idempotency;
     private final ProjectRepository projects;
     private final UserRepository users;
+    private final UploadIntentService uploads;
+    private final FileAssetRepository files;
+    private final VersionFileRepository versionFiles;
 
     public MaterialService(MaterialRepository materials, MaterialVersionRepository versions, IdempotencyRecordRepository idempotency,
-                           ProjectRepository projects, UserRepository users) {
-        this.materials = materials;
-        this.versions = versions;
-        this.idempotency = idempotency;
-        this.projects = projects;
-        this.users = users;
+                           ProjectRepository projects, UserRepository users, UploadIntentService uploads,
+                           FileAssetRepository files, VersionFileRepository versionFiles) {
+        this.materials=materials; this.versions=versions; this.idempotency=idempotency; this.projects=projects; this.users=users;
+        this.uploads=uploads; this.files=files; this.versionFiles=versionFiles;
     }
 
     @Transactional
-    public MaterialView createText(UUID userId, String key, TextMaterialRequest request) {
-        String fingerprint = fingerprint(request.projectId(), request.title(), request.eventTime(), request.location(), request.manualTags(), request.textBody());
-        AppUser owner = users.findByIdForUpdate(userId).orElseThrow();
-        MaterialView replay = replay(userId, CREATE_TEXT, key, fingerprint);
-        if (replay != null) return replay;
-        ReportingProject project = projects.findById(request.projectId()).orElseThrow(() -> missing("PROJECT_NOT_FOUND", "Project was not found"));
-        Instant now = Instant.now();
-        UUID firstVersionId = UUID.randomUUID();
-        Material material = new Material(UUID.randomUUID(), project, owner, MaterialType.TEXT, now);
-        material.setCurrentVersionId(firstVersionId);
-        materials.save(material);
-        MaterialVersion first = versions.save(new MaterialVersion(firstVersionId, material, 1, owner, now,
-                clean(request.title()), request.eventTime(), nullableClean(request.location()), tags(request.manualTags()), clean(request.textBody())));
-        material.setCurrentVersionId(first.getId());
-        idempotency.save(new IdempotencyRecord(UUID.randomUUID(), userId, CREATE_TEXT, key, fingerprint, material.getId(), 1, now));
-        return view(material, first, userId, false);
-    }
-
-    @Transactional(readOnly = true)
-    public MaterialView current(UUID materialId, UUID userId) {
-        Material material = material(materialId);
-        MaterialVersion current = versions.findById(material.getCurrentVersionId()).orElseThrow();
-        return view(material, current, userId, false);
-    }
-
-    @Transactional(readOnly = true)
-    public List<VersionView> history(UUID materialId) {
-        material(materialId);
-        return versions.findByMaterial_IdOrderByVersionNumberAsc(materialId).stream().map(this::versionView).toList();
-    }
-
-    @Transactional(readOnly = true)
-    public MaterialView historical(UUID materialId, int number, UUID userId) {
-        Material material = material(materialId);
-        MaterialVersion version = versions.findByMaterial_IdAndVersionNumber(materialId, number)
-                .orElseThrow(() -> missing("VERSION_NOT_FOUND", "Version was not found"));
-        return view(material, version, userId, !version.getId().equals(material.getCurrentVersionId()));
+    public MaterialView createText(UUID userId,String key,TextMaterialRequest request){
+        String fp=fingerprint(request.projectId(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textBody());
+        AppUser owner=users.findByIdForUpdate(userId).orElseThrow(); MaterialView replay=replay(userId,CREATE_TEXT,key,fp); if(replay!=null)return replay;
+        ReportingProject project=project(request.projectId()); Instant now=Instant.now(); UUID versionId=UUID.randomUUID();
+        Material material=new Material(UUID.randomUUID(),project,owner,MaterialType.TEXT,now); material.setCurrentVersionId(versionId); materials.save(material);
+        MaterialVersion first=versions.save(new MaterialVersion(versionId,material,1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),clean(request.textBody())));
+        material.setCurrentVersionId(first.getId()); idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_TEXT,key,fp,material.getId(),1,now));
+        return view(material,first,userId,false);
     }
 
     @Transactional
-    public MaterialView createVersion(UUID materialId, UUID userId, String key, TextVersionRequest request) {
-        String fingerprint = fingerprint(materialId, request.expectedCurrentVersion(), request.title(), request.eventTime(), request.location(), request.manualTags(), request.textBody());
-        Material material = materials.findByIdForUpdate(materialId).orElseThrow(() -> missing("MATERIAL_NOT_FOUND", "Material was not found"));
-        MaterialView replay = replay(userId, CREATE_VERSION, key, fingerprint);
-        if (replay != null) return replay;
-        if (!material.getOwner().getId().equals(userId)) throw forbidden();
-        if (material.getType() != MaterialType.TEXT) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MATERIAL_TYPE_MISMATCH", "A TEXT version is required");
-        MaterialVersion current = versions.findById(material.getCurrentVersionId()).orElseThrow();
-        if (request.expectedCurrentVersion() != current.getVersionNumber()) {
-            throw new ApiException(HttpStatus.CONFLICT, "VERSION_CONFLICT", "The material has a newer version");
+    public MaterialView createFile(UUID userId,String key,FileMaterialRequest request){
+        String fp=fingerprint(request.projectId(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textContent(),request.uploadIntentIds());
+        AppUser owner=users.findByIdForUpdate(userId).orElseThrow(); MaterialView replay=replay(userId,CREATE_FILE,key,fp); if(replay!=null)return replay;
+        List<UploadIntent> intents=uploads.verifyForUse(userId,request.uploadIntentIds()); ReportingProject project=project(request.projectId());
+        Instant now=Instant.now(); UUID versionId=UUID.randomUUID(); Material material=new Material(UUID.randomUUID(),project,owner,MaterialType.FILE,now);
+        material.setCurrentVersionId(versionId); materials.save(material);
+        MaterialVersion first=versions.save(MaterialVersion.file(versionId,material,1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),nullableClean(request.textContent())));
+        attachNew(material,first,owner,intents,0,now); material.setCurrentVersionId(first.getId());
+        idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_FILE,key,fp,material.getId(),1,now)); return view(material,first,userId,false);
+    }
+
+    @Transactional(readOnly=true) public MaterialView current(UUID id,UUID userId){Material m=material(id);return view(m,versions.findById(m.getCurrentVersionId()).orElseThrow(),userId,false);}
+    @Transactional(readOnly=true) public List<VersionView> history(UUID id){material(id);return versions.findByMaterial_IdOrderByVersionNumberAsc(id).stream().map(this::versionView).toList();}
+    @Transactional(readOnly=true) public MaterialView historical(UUID id,int number,UUID userId){Material m=material(id);MaterialVersion v=versions.findByMaterial_IdAndVersionNumber(id,number).orElseThrow(()->missing("VERSION_NOT_FOUND","Version was not found"));return view(m,v,userId,!v.getId().equals(m.getCurrentVersionId()));}
+
+    @Transactional
+    public MaterialView createVersion(UUID materialId,UUID userId,String key,TextVersionRequest request){
+        return createVersion(materialId,userId,key,new MaterialVersionRequest(request.expectedCurrentVersion(),request.title(),request.eventTime(),
+                request.location(),request.manualTags(),request.textBody(),null,null,null));
+    }
+
+    @Transactional
+    public MaterialView createVersion(UUID materialId,UUID userId,String key,MaterialVersionRequest request){
+        String fp=fingerprint(materialId,request.expectedCurrentVersion(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textBody(),request.textContent(),request.fileIds(),request.uploadIntentIds());
+        Material material=materials.findByIdForUpdate(materialId).orElseThrow(()->missing("MATERIAL_NOT_FOUND","Material was not found"));
+        MaterialView replay=replay(userId,CREATE_VERSION,key,fp); if(replay!=null)return replay;
+        if(!material.getOwner().getId().equals(userId))throw forbidden(); MaterialVersion current=versions.findById(material.getCurrentVersionId()).orElseThrow();
+        if(!Objects.equals(request.expectedCurrentVersion(),current.getVersionNumber()))throw new ApiException(HttpStatus.CONFLICT,"VERSION_CONFLICT","The material has a newer version");
+        AppUser owner=users.findById(userId).orElseThrow(); Instant now=Instant.now(); MaterialVersion next;
+        if(material.getType()==MaterialType.TEXT){
+            if(request.textBody()==null||request.textBody().isBlank())throw new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","Text body is required");
+            next=versions.save(new MaterialVersion(UUID.randomUUID(),material,current.getVersionNumber()+1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),clean(request.textBody())));
+        }else{
+            List<UUID> retained=request.fileIds()==null?List.of():request.fileIds(); if(new HashSet<>(retained).size()!=retained.size())invalidFiles();
+            List<FileAsset> currentFiles=versionFiles.findByVersion_IdOrderByDisplayOrder(current.getId()).stream().map(VersionFile::getFile).toList();
+            Map<UUID,FileAsset> allowed=new HashMap<>();currentFiles.forEach(f->allowed.put(f.getId(),f));List<FileAsset> finalFiles=new ArrayList<>();
+            for(UUID id:retained){FileAsset f=allowed.get(id);if(f==null)invalidFiles();finalFiles.add(f);}
+            List<UUID> newIds=request.uploadIntentIds()==null?List.of():request.uploadIntentIds();
+            if(finalFiles.size()+newIds.size()<1||finalFiles.size()+newIds.size()>10)invalidFiles();
+            List<UploadIntent> newIntents=newIds.isEmpty()?List.of():uploads.verifyForUse(userId,newIds);
+            next=versions.save(MaterialVersion.file(UUID.randomUUID(),material,current.getVersionNumber()+1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),nullableClean(request.textContent())));
+            int order=0;for(FileAsset f:finalFiles)versionFiles.save(new VersionFile(next,f,order++));attachNew(material,next,owner,newIntents,order,now);
         }
-        AppUser owner = users.findById(userId).orElseThrow();
-        Instant now = Instant.now();
-        MaterialVersion next = versions.save(new MaterialVersion(UUID.randomUUID(), material, current.getVersionNumber() + 1, owner, now,
-                clean(request.title()), request.eventTime(), nullableClean(request.location()), tags(request.manualTags()), clean(request.textBody())));
-        material.setCurrentVersionId(next.getId());
-        idempotency.save(new IdempotencyRecord(UUID.randomUUID(), userId, CREATE_VERSION, key, fingerprint, materialId, next.getVersionNumber(), now));
-        return view(material, next, userId, false);
+        material.setCurrentVersionId(next.getId());idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_VERSION,key,fp,materialId,next.getVersionNumber(),now));return view(material,next,userId,false);
     }
 
-    private MaterialView replay(UUID userId, String operation, String key, String fingerprint) {
-        return idempotency.findByUserIdAndOperationAndIdempotencyKey(userId, operation, key).map(record -> {
-            if (!record.getPayloadFingerprint().equals(fingerprint)) {
-                throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different request");
-            }
-            Material material = material(record.getMaterialId());
-            MaterialVersion version = versions.findByMaterial_IdAndVersionNumber(material.getId(), record.getVersionNumber()).orElseThrow();
-            return view(material, version, userId, !version.getId().equals(material.getCurrentVersionId()));
-        }).orElse(null);
-    }
-
-    private Material material(UUID id) {
-        return materials.findById(id).orElseThrow(() -> missing("MATERIAL_NOT_FOUND", "Material was not found"));
-    }
-
-    private ApiException missing(String code, String message) {
-        return new ApiException(HttpStatus.NOT_FOUND, code, message);
-    }
-
-    private ApiException forbidden() {
-        return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission for this action");
-    }
-
-    private MaterialView view(Material material, MaterialVersion version, UUID viewerId, boolean historical) {
-        return new MaterialView(material.getId(), material.getProject().getId(), material.getOwner().getId(), material.getType(),
-                material.getMaterialCreatedTime(), material.getCurrentVersionId(), !historical && material.getOwner().getId().equals(viewerId),
-                historical, versionView(version));
-    }
-
-    private VersionView versionView(MaterialVersion version) {
-        return new VersionView(version.getId(), version.getVersionNumber(), version.getCreatedBy().getId(), version.getVersionCreatedTime(),
-                new VersionSnapshotView(version.getTitle(), version.getEventTime(), version.getLocation(), version.getManualTags(),
-                        new TextVersionContentView(version.getTextBody())));
-    }
-
-    private List<String> tags(List<String> input) {
-        return input == null ? List.of() : input.stream().filter(Objects::nonNull).map(String::trim).filter(tag -> !tag.isEmpty()).distinct().toList();
-    }
-
-    private String clean(String value) {
-        return value.trim();
-    }
-
-    private String nullableClean(String value) {
-        if (value == null || value.isBlank()) return null;
-        return value.trim();
-    }
-
-    private String fingerprint(Object... values) {
-        try {
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256")
-                    .digest(java.util.Arrays.deepToString(values).getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException(exception);
-        }
-    }
+    private void attachNew(Material material,MaterialVersion version,AppUser owner,List<UploadIntent> intents,int start,Instant now){int order=start;for(UploadIntent intent:intents){FileAsset f=files.save(new FileAsset(UUID.randomUUID(),material,owner,intent,now));versionFiles.save(new VersionFile(version,f,order++));intent.consume(now);}}
+    private MaterialView replay(UUID userId,String operation,String key,String fp){return idempotency.findByUserIdAndOperationAndIdempotencyKey(userId,operation,key).map(r->{if(!r.getPayloadFingerprint().equals(fp))throw new ApiException(HttpStatus.CONFLICT,"IDEMPOTENCY_CONFLICT","Idempotency-Key was already used with a different request");Material m=material(r.getMaterialId());MaterialVersion v=versions.findByMaterial_IdAndVersionNumber(m.getId(),r.getVersionNumber()).orElseThrow();return view(m,v,userId,!v.getId().equals(m.getCurrentVersionId()));}).orElse(null);}
+    private MaterialView view(Material m,MaterialVersion v,UUID viewer,boolean historical){return new MaterialView(m.getId(),m.getProject().getId(),m.getOwner().getId(),m.getType(),m.getMaterialCreatedTime(),m.getCurrentVersionId(),!historical&&m.getOwner().getId().equals(viewer),historical,versionView(v));}
+    private VersionView versionView(MaterialVersion v){VersionContentView content=v.getContentKind()==VersionContentKind.TEXT?new TextVersionContentView(v.getTextBody()):new FileVersionContentView(v.getFileTextContent(),versionFiles.findByVersion_IdOrderByDisplayOrder(v.getId()).stream().map(VersionFile::getFile).map(FileAssetView::from).toList());return new VersionView(v.getId(),v.getVersionNumber(),v.getCreatedBy().getId(),v.getVersionCreatedTime(),new VersionSnapshotView(v.getTitle(),v.getEventTime(),v.getLocation(),v.getManualTags(),content));}
+    private ReportingProject project(UUID id){return projects.findById(id).orElseThrow(()->missing("PROJECT_NOT_FOUND","Project was not found"));}
+    private Material material(UUID id){return materials.findById(id).orElseThrow(()->missing("MATERIAL_NOT_FOUND","Material was not found"));}
+    private ApiException missing(String code,String message){return new ApiException(HttpStatus.NOT_FOUND,code,message);} private ApiException forbidden(){return new ApiException(HttpStatus.FORBIDDEN,"FORBIDDEN","You do not have permission for this action");}
+    private void invalidFiles(){throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,"INVALID_FILE_SET","File set is invalid");}
+    private List<String> tags(List<String> in){return in==null?List.of():in.stream().filter(Objects::nonNull).map(String::trim).filter(s->!s.isEmpty()).distinct().toList();}
+    private String clean(String value){return value.trim();} private String nullableClean(String value){return value==null||value.isBlank()?null:value.trim();}
+    private String fingerprint(Object... values){try{return Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(Arrays.deepToString(values).getBytes(StandardCharsets.UTF_8)));}catch(NoSuchAlgorithmException e){throw new IllegalStateException(e);}}
 }

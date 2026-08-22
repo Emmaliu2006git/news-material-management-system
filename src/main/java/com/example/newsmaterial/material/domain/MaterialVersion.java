@@ -36,6 +36,7 @@ public class MaterialVersion {
     @Enumerated(EnumType.STRING) @Column(name = "content_kind", nullable = false, length = 16, updatable = false)
     private VersionContentKind contentKind;
     @Column(name = "text_body", columnDefinition = "text", updatable = false) private String textBody;
+    @Column(name = "file_text_content", columnDefinition = "text", updatable = false) private String fileTextContent;
 
     protected MaterialVersion() {
     }
@@ -55,6 +56,15 @@ public class MaterialVersion {
         this.textBody = textBody;
     }
 
+    public static MaterialVersion file(UUID id, Material material, int versionNumber, AppUser createdBy, Instant createdAt,
+                                       String title, Instant eventTime, String location, List<String> tags, String textContent) {
+        MaterialVersion v = new MaterialVersion();
+        v.id=id; v.material=material; v.versionNumber=versionNumber; v.createdBy=createdBy; v.versionCreatedTime=createdAt;
+        v.title=title; v.eventTime=eventTime; v.location=location; v.manualTags=new ArrayList<>(tags);
+        v.contentKind=VersionContentKind.FILE; v.fileTextContent=textContent;
+        return v;
+    }
+
     public UUID getId() { return id; }
     public Material getMaterial() { return material; }
     public int getVersionNumber() { return versionNumber; }
@@ -66,4 +76,5 @@ public class MaterialVersion {
     public List<String> getManualTags() { return List.copyOf(manualTags); }
     public VersionContentKind getContentKind() { return contentKind; }
     public String getTextBody() { return textBody; }
+    public String getFileTextContent() { return fileTextContent; }
 }

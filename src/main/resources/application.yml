@@ -8,3 +8,12 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+app:
+  storage:
+    bucket: ${NEWS_MATERIAL_S3_BUCKET:news-material-private}
+    region: ${AWS_REGION:us-east-1}
+  upload:
+    max-files: 10
+    max-file-bytes: 52428800
+    max-total-bytes: 209715200
+    intent-ttl: PT15M
