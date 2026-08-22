@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/news_material
+    username: news_material
+    password: news_material
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true

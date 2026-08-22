@@ -1,0 +1,2 @@
+create table app_users (id uuid primary key, username varchar(64) not null unique, password_hash varchar(100) not null, created_at timestamp with time zone not null);
+create table reporting_projects (id uuid primary key, title varchar(160) not null, created_by uuid not null, created_at timestamp with time zone not null, updated_at timestamp with time zone not null, constraint fk_projects_user foreign key (created_by) references app_users(id));
