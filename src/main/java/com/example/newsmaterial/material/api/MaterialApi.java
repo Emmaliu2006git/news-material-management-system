@@ -31,7 +31,9 @@ public class MaterialApi {
     public record TextMaterialRequest(@NotNull UUID projectId, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, @NotBlank String textBody) {}
     public record FileMaterialRequest(@NotNull UUID projectId, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textContent, List<UUID> uploadIntentIds) {}
     public record TextVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, @NotBlank String textBody) {}
-    public record MaterialVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textBody, String textContent, List<UUID> fileIds, List<UUID> uploadIntentIds) {}
+    public enum FileSelectionKind { EXISTING, UPLOAD }
+    public record FileSelectionRequest(FileSelectionKind kind, UUID fileId, UUID uploadIntentId) {}
+    public record MaterialVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textBody, String textContent, List<UUID> fileIds, List<UUID> uploadIntentIds, List<FileSelectionRequest> files) {}
     public record MaterialView(UUID id, UUID projectId, UUID ownerId, MaterialType type, Instant materialCreatedTime, UUID currentVersionId, boolean canEdit, boolean historical, VersionView version) {}
     public record VersionView(UUID id, int versionNumber, UUID createdBy, Instant versionCreatedTime, VersionSnapshotView snapshot) {}
     public record VersionSnapshotView(String title, Instant eventTime, String location, List<String> manualTags, VersionContentView content) {}

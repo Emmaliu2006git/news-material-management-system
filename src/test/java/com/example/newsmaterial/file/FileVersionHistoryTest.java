@@ -47,9 +47,9 @@ class FileVersionHistoryTest {
         MvcResult v2 = mvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
                         .with(SecurityMockMvcRequestPostProcessors.csrf()).header("Idempotency-Key", "file-v2")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Updated files\",\"textContent\":null,\"fileIds\":[\"%s\"],\"uploadIntentIds\":[\"%s\"]}".formatted(secondFile, replacement.id())))
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Updated files\",\"textContent\":null,\"files\":[{\"kind\":\"UPLOAD\",\"uploadIntentId\":\"%s\"},{\"kind\":\"EXISTING\",\"fileId\":\"%s\"}]}".formatted(replacement.id(), secondFile)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.version.versionNumber").value(2)).andReturn();
-        String replacementFile = JsonPath.read(v2.getResponse().getContentAsString(), "$.version.snapshot.content.files[1].id");
+        String replacementFile = JsonPath.read(v2.getResponse().getContentAsString(), "$.version.snapshot.content.files[0].id");
         assertThat(replacementFile).isNotEqualTo(firstFile);
 
         mvc.perform(get("/api/v1/materials/{id}/versions/{number}", materialId, 1).session(login("alex")))
@@ -57,13 +57,13 @@ class FileVersionHistoryTest {
                 .andExpect(jsonPath("$.version.snapshot.content.files[0].id").value(firstFile))
                 .andExpect(jsonPath("$.version.snapshot.content.files[1].id").value(secondFile));
         mvc.perform(get("/api/v1/materials/{id}", materialId).session(emma))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.version.snapshot.content.files[0].id").value(secondFile))
-                .andExpect(jsonPath("$.version.snapshot.content.files[1].id").value(replacementFile));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version.snapshot.content.files[0].id").value(replacementFile))
+                .andExpect(jsonPath("$.version.snapshot.content.files[1].id").value(secondFile));
 
         MvcResult replay = mvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
                         .with(SecurityMockMvcRequestPostProcessors.csrf()).header("Idempotency-Key", "file-v2")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Updated files\",\"textContent\":null,\"fileIds\":[\"%s\"],\"uploadIntentIds\":[\"%s\"]}".formatted(secondFile, replacement.id())))
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Updated files\",\"textContent\":null,\"files\":[{\"kind\":\"UPLOAD\",\"uploadIntentId\":\"%s\"},{\"kind\":\"EXISTING\",\"fileId\":\"%s\"}]}".formatted(replacement.id(), secondFile)))
                 .andExpect(status().isCreated()).andReturn();
         assertThat(JsonPath.<Integer>read(replay.getResponse().getContentAsString(), "$.version.versionNumber")).isEqualTo(2);
     }

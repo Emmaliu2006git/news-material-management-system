@@ -53,6 +53,7 @@ public class MaterialService {
         String fp=fingerprint(request.projectId(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textContent(),request.uploadIntentIds());
         AppUser owner=users.findByIdForUpdate(userId).orElseThrow(); MaterialView replay=replay(userId,CREATE_FILE,key,fp); if(replay!=null)return replay;
         List<UploadIntent> intents=uploads.verifyForUse(userId,request.uploadIntentIds()); ReportingProject project=project(request.projectId());
+        uploads.validateSnapshotTotal(intents.stream().map(UploadIntent::getSizeBytes).toList());
         Instant now=Instant.now(); UUID versionId=UUID.randomUUID(); Material material=new Material(UUID.randomUUID(),project,owner,MaterialType.FILE,now);
         material.setCurrentVersionId(versionId); materials.save(material);
         MaterialVersion first=versions.save(MaterialVersion.file(versionId,material,1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),nullableClean(request.textContent())));
@@ -67,12 +68,12 @@ public class MaterialService {
     @Transactional
     public MaterialView createVersion(UUID materialId,UUID userId,String key,TextVersionRequest request){
         return createVersion(materialId,userId,key,new MaterialVersionRequest(request.expectedCurrentVersion(),request.title(),request.eventTime(),
-                request.location(),request.manualTags(),request.textBody(),null,null,null));
+                request.location(),request.manualTags(),request.textBody(),null,null,null,null));
     }
 
     @Transactional
     public MaterialView createVersion(UUID materialId,UUID userId,String key,MaterialVersionRequest request){
-        String fp=fingerprint(materialId,request.expectedCurrentVersion(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textBody(),request.textContent(),request.fileIds(),request.uploadIntentIds());
+        String fp=fingerprint(materialId,request.expectedCurrentVersion(),request.title(),request.eventTime(),request.location(),request.manualTags(),request.textBody(),request.textContent(),request.fileIds(),request.uploadIntentIds(),request.files());
         Material material=materials.findByIdForUpdate(materialId).orElseThrow(()->missing("MATERIAL_NOT_FOUND","Material was not found"));
         MaterialView replay=replay(userId,CREATE_VERSION,key,fp); if(replay!=null)return replay;
         if(!material.getOwner().getId().equals(userId))throw forbidden(); MaterialVersion current=versions.findById(material.getCurrentVersionId()).orElseThrow();
@@ -82,20 +83,46 @@ public class MaterialService {
             if(request.textBody()==null||request.textBody().isBlank())throw new ApiException(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","Text body is required");
             next=versions.save(new MaterialVersion(UUID.randomUUID(),material,current.getVersionNumber()+1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),clean(request.textBody())));
         }else{
-            List<UUID> retained=request.fileIds()==null?List.of():request.fileIds(); if(new HashSet<>(retained).size()!=retained.size())invalidFiles();
+            List<FileSelectionRequest> selections=fileSelections(request);
+            if(selections.isEmpty()||selections.size()>10)invalidFiles();
             List<FileAsset> currentFiles=versionFiles.findByVersion_IdOrderByDisplayOrder(current.getId()).stream().map(VersionFile::getFile).toList();
-            Map<UUID,FileAsset> allowed=new HashMap<>();currentFiles.forEach(f->allowed.put(f.getId(),f));List<FileAsset> finalFiles=new ArrayList<>();
-            for(UUID id:retained){FileAsset f=allowed.get(id);if(f==null)invalidFiles();finalFiles.add(f);}
-            List<UUID> newIds=request.uploadIntentIds()==null?List.of():request.uploadIntentIds();
-            if(finalFiles.size()+newIds.size()<1||finalFiles.size()+newIds.size()>10)invalidFiles();
+            Map<UUID,FileAsset> allowed=new HashMap<>();currentFiles.forEach(f->allowed.put(f.getId(),f));
+            Set<UUID> retainedIds=new HashSet<>();List<UUID> newIds=new ArrayList<>();
+            for(FileSelectionRequest selection:selections){
+                if(selection==null||selection.kind()==null)invalidFiles();
+                if(selection.kind()==FileSelectionKind.EXISTING){
+                    if(selection.fileId()==null||selection.uploadIntentId()!=null||!retainedIds.add(selection.fileId())||!allowed.containsKey(selection.fileId()))invalidFiles();
+                }else{
+                    if(selection.uploadIntentId()==null||selection.fileId()!=null)invalidFiles();
+                    newIds.add(selection.uploadIntentId());
+                }
+            }
             List<UploadIntent> newIntents=newIds.isEmpty()?List.of():uploads.verifyForUse(userId,newIds);
+            Map<UUID,UploadIntent> intentById=new HashMap<>();newIntents.forEach(i->intentById.put(i.getId(),i));
+            List<Long> snapshotSizes=new ArrayList<>();
+            for(FileSelectionRequest selection:selections)snapshotSizes.add(selection.kind()==FileSelectionKind.EXISTING?allowed.get(selection.fileId()).getSizeBytes():intentById.get(selection.uploadIntentId()).getSizeBytes());
+            uploads.validateSnapshotTotal(snapshotSizes);
             next=versions.save(MaterialVersion.file(UUID.randomUUID(),material,current.getVersionNumber()+1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),nullableClean(request.textContent())));
-            int order=0;for(FileAsset f:finalFiles)versionFiles.save(new VersionFile(next,f,order++));attachNew(material,next,owner,newIntents,order,now);
+            int order=0;
+            for(FileSelectionRequest selection:selections){
+                FileAsset file=selection.kind()==FileSelectionKind.EXISTING?allowed.get(selection.fileId()):newFile(material,owner,intentById.get(selection.uploadIntentId()),now);
+                versionFiles.save(new VersionFile(next,file,order++));
+            }
         }
         material.setCurrentVersionId(next.getId());idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_VERSION,key,fp,materialId,next.getVersionNumber(),now));return view(material,next,userId,false);
     }
 
-    private void attachNew(Material material,MaterialVersion version,AppUser owner,List<UploadIntent> intents,int start,Instant now){int order=start;for(UploadIntent intent:intents){FileAsset f=files.save(new FileAsset(UUID.randomUUID(),material,owner,intent,now));versionFiles.save(new VersionFile(version,f,order++));intent.consume(now);}}
+    private List<FileSelectionRequest> fileSelections(MaterialVersionRequest request){
+        boolean combined=request.files()!=null,legacy=(request.fileIds()!=null&&!request.fileIds().isEmpty())||(request.uploadIntentIds()!=null&&!request.uploadIntentIds().isEmpty());
+        if(combined&&legacy)invalidFiles();
+        if(combined)return request.files();
+        List<FileSelectionRequest> result=new ArrayList<>();
+        if(request.fileIds()!=null)request.fileIds().forEach(id->result.add(new FileSelectionRequest(FileSelectionKind.EXISTING,id,null)));
+        if(request.uploadIntentIds()!=null)request.uploadIntentIds().forEach(id->result.add(new FileSelectionRequest(FileSelectionKind.UPLOAD,null,id)));
+        return result;
+    }
+    private FileAsset newFile(Material material,AppUser owner,UploadIntent intent,Instant now){FileAsset file=files.save(new FileAsset(UUID.randomUUID(),material,owner,intent,now));intent.consume(now);return file;}
+    private void attachNew(Material material,MaterialVersion version,AppUser owner,List<UploadIntent> intents,int start,Instant now){int order=start;for(UploadIntent intent:intents){FileAsset f=newFile(material,owner,intent,now);versionFiles.save(new VersionFile(version,f,order++));}}
     private MaterialView replay(UUID userId,String operation,String key,String fp){return idempotency.findByUserIdAndOperationAndIdempotencyKey(userId,operation,key).map(r->{if(!r.getPayloadFingerprint().equals(fp))throw new ApiException(HttpStatus.CONFLICT,"IDEMPOTENCY_CONFLICT","Idempotency-Key was already used with a different request");Material m=material(r.getMaterialId());MaterialVersion v=versions.findByMaterial_IdAndVersionNumber(m.getId(),r.getVersionNumber()).orElseThrow();return view(m,v,userId,!v.getId().equals(m.getCurrentVersionId()));}).orElse(null);}
     private MaterialView view(Material m,MaterialVersion v,UUID viewer,boolean historical){return new MaterialView(m.getId(),m.getProject().getId(),m.getOwner().getId(),m.getType(),m.getMaterialCreatedTime(),m.getCurrentVersionId(),!historical&&m.getOwner().getId().equals(viewer),historical,versionView(v));}
     private VersionView versionView(MaterialVersion v){VersionContentView content=v.getContentKind()==VersionContentKind.TEXT?new TextVersionContentView(v.getTextBody()):new FileVersionContentView(v.getFileTextContent(),versionFiles.findByVersion_IdOrderByDisplayOrder(v.getId()).stream().map(VersionFile::getFile).map(FileAssetView::from).toList());return new VersionView(v.getId(),v.getVersionNumber(),v.getCreatedBy().getId(),v.getVersionCreatedTime(),new VersionSnapshotView(v.getTitle(),v.getEventTime(),v.getLocation(),v.getManualTags(),content));}

@@ -80,6 +80,30 @@ class FileMaterialApiTest {
         create(emma, project, "Missing upload", null, pending.id(), null, "missing-object-retry");
     }
 
+    @Test void consumedIntentCannotFinalizeAnotherMaterialOrVersion() throws Exception {
+        MockHttpSession emma = login("emma");
+        String project = project(emma);
+        Upload upload = upload(emma, "one-use.txt", "text/plain", "one-use".getBytes());
+        MvcResult first = create(emma, project, "First use", null, upload.id(), null, "one-use-first");
+        String materialId = JsonPath.read(first.getResponse().getContentAsString(), "$.id");
+
+        mvc.perform(post("/api/v1/materials/file").session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "one-use-second-material")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload(project, "Second use", null, upload.id())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("UPLOAD_INTENT_CONSUMED"));
+
+        mvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "one-use-version")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Second use\",\"files\":[{\"kind\":\"UPLOAD\",\"uploadIntentId\":\"%s\"}]}".formatted(upload.id())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("UPLOAD_INTENT_CONSUMED"));
+    }
+
     private MvcResult create(MockHttpSession session, String project, String title, String text, String first, String second, String key) throws Exception {
         return mvc.perform(post("/api/v1/materials/file").session(session).with(SecurityMockMvcRequestPostProcessors.csrf())
                         .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content(payload(project, title, text, first, second)))
