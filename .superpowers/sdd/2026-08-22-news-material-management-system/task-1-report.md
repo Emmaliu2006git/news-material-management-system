@@ -32,3 +32,23 @@ Implemented the Spring Boot 4.1.1 / Java 21 foundation with a local H2 demo prof
 - Self-review: error response now has only required envelope fields; no material/version features were added.
 - Remaining architecture note: package split is still required in a follow-up refactor.
 
+
+## Fix round 2: cohesive package split
+
+### Files
+- NewsMaterialApplication.java now contains only the Spring Boot bootstrap.
+- common/api owns the stable error envelope, domain API exception, and exception advice.
+- security owns the session security configuration, demo seeding, user entity/repository/details service, authentication endpoints, and security handlers.
+- project owns the project entity/repository/service/controller and request/response DTOs.
+
+### Verification
+- ./mvnw -q -Dtest=AuthenticationApiTest,ProjectApiTest test passed.
+- ./mvnw -q test passed.
+
+### Self-review
+- Public API routes, session-based authentication, CSRF behavior, stable error envelope, and creator-only project rename behavior are unchanged.
+- The controller delegates project policy and transactions to ProjectService; no source remains duplicated in the application bootstrap.
+- No material, version, upload, search, or AI functionality was added.
+
+### Commit
+- refactor: split bootstrap into cohesive packages (this commit).
