@@ -64,6 +64,18 @@ class ProjectApiTest {
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    @Test
+    void validationFailureUsesTheStableErrorEnvelope() throws Exception {
+        MockHttpSession emma = login("emma");
+        mockMvc.perform(post("/api/v1/projects").session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.requestId").exists())
+                .andExpect(jsonPath("$.details").isArray());
+    }
     private MockHttpSession login(String username) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"%s\",\"password\":\"demo-password\"}".formatted(username)))
