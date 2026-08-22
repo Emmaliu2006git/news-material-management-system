@@ -40,7 +40,7 @@ public class NewsMaterialApplication {
  @Bean SecurityContextRepository securityContextRepository(){return new HttpSessionSecurityContextRepository();}
  @Bean SecurityFilterChain filter(HttpSecurity h,SecurityContextRepository repo,JsonMapper json)throws Exception{
   var csrf=CookieCsrfTokenRepository.withHttpOnlyFalse();csrf.setCookiePath("/");
-  h.csrf(c->c.csrfTokenRepository(csrf).ignoringRequestMatchers("/api/v1/auth/login"))
+  h.csrf(c->c.csrfTokenRepository(csrf).csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()).ignoringRequestMatchers("/api/v1/auth/login"))
    .securityContext(c->c.securityContextRepository(repo).requireExplicitSave(true))
    .sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
    .exceptionHandling(e->e.authenticationEntryPoint(new Entry(json)).accessDeniedHandler(new Denied(json)))
@@ -76,7 +76,7 @@ class AuthApi{
  @PostMapping("/login") LoginResponse login(@Valid @RequestBody LoginRequest body,HttpServletRequest req,HttpServletResponse res){
   try{Authentication a=manager.authenticate(UsernamePasswordAuthenticationToken.unauthenticated(body.username(),body.password()));SecurityContext c=SecurityContextHolder.createEmptyContext();c.setAuthentication(a);SecurityContextHolder.setContext(c);sessions.saveContext(c,req,res);Principal p=(Principal)a.getPrincipal();return new LoginResponse(p.id(),p.username());}catch(BadCredentialsException e){throw new ApiException(HttpStatus.UNAUTHORIZED,"INVALID_CREDENTIALS","Invalid username or password");}
  }
- @GetMapping("/csrf") CsrfResponse csrf(HttpServletRequest r){CsrfToken t=(CsrfToken)r.getAttribute(CsrfToken.class.getName());if(t==null)t=(CsrfToken)r.getAttribute("_csrf");return new CsrfResponse(t.getToken(),t.getHeaderName());}
+ @GetMapping("/csrf") CsrfResponse csrf(HttpServletRequest r,HttpServletResponse response){CsrfToken t=(CsrfToken)r.getAttribute(CsrfToken.class.getName());if(t==null)t=(CsrfToken)r.getAttribute("_csrf");Cookie cookie=new Cookie("XSRF-TOKEN",t.getToken());cookie.setPath("/");response.addCookie(cookie);return new CsrfResponse(t.getToken(),t.getHeaderName());}
  record LoginRequest(@NotBlank String username,@NotBlank String password){} record LoginResponse(UUID id,String username){} record CsrfResponse(String token,String headerName){}
 }
 

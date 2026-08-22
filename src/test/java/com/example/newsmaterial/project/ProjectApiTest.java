@@ -76,6 +76,17 @@ class ProjectApiTest {
                 .andExpect(jsonPath("$.requestId").exists())
                 .andExpect(jsonPath("$.details").isArray());
     }
+    @Test
+    @org.springframework.test.annotation.DirtiesContext(methodMode = org.springframework.test.annotation.DirtiesContext.MethodMode.BEFORE_METHOD)
+    void csrfEndpointProvidesTokenAndCookieForMutation() throws Exception {
+        MockHttpSession emma = login("emma");
+        MvcResult csrf = mockMvc.perform(get("/api/v1/auth/csrf").session(emma)).andExpect(status().isOk()).andExpect(jsonPath("$.token").exists()).andReturn();
+        String token = JsonPath.read(csrf.getResponse().getContentAsString(), "$.token");
+        jakarta.servlet.http.Cookie cookie = csrf.getResponse().getCookie("XSRF-TOKEN");
+        mockMvc.perform(post("/api/v1/projects").session(emma).cookie(cookie).header("X-XSRF-TOKEN", token)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"CSRF Bootstrap\"}"))
+                .andExpect(status().isCreated());
+    }
     private MockHttpSession login(String username) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"%s\",\"password\":\"demo-password\"}".formatted(username)))
