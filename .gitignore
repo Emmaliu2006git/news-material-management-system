@@ -1,0 +1,13 @@
+.idea/
+.vscode/
+.DS_Store
+.superpowers/
+target/
+frontend/node_modules/
+frontend/dist/
+.env
+.tools/
+data/
+uploads/
+playwright-report/
+test-results/
