@@ -53,10 +53,10 @@ public class MaterialService {
     @Transactional
     public MaterialView createText(UUID userId, String key, TextMaterialRequest request) {
         String fingerprint = fingerprint(request.projectId(), request.title(), request.eventTime(), request.location(), request.manualTags(), request.textBody());
+        AppUser owner = users.findByIdForUpdate(userId).orElseThrow();
         MaterialView replay = replay(userId, CREATE_TEXT, key, fingerprint);
         if (replay != null) return replay;
         ReportingProject project = projects.findById(request.projectId()).orElseThrow(() -> missing("PROJECT_NOT_FOUND", "Project was not found"));
-        AppUser owner = users.findById(userId).orElseThrow();
         Instant now = Instant.now();
         UUID firstVersionId = UUID.randomUUID();
         Material material = new Material(UUID.randomUUID(), project, owner, MaterialType.TEXT, now);
@@ -93,9 +93,9 @@ public class MaterialService {
     @Transactional
     public MaterialView createVersion(UUID materialId, UUID userId, String key, TextVersionRequest request) {
         String fingerprint = fingerprint(materialId, request.expectedCurrentVersion(), request.title(), request.eventTime(), request.location(), request.manualTags(), request.textBody());
+        Material material = materials.findByIdForUpdate(materialId).orElseThrow(() -> missing("MATERIAL_NOT_FOUND", "Material was not found"));
         MaterialView replay = replay(userId, CREATE_VERSION, key, fingerprint);
         if (replay != null) return replay;
-        Material material = materials.findByIdForUpdate(materialId).orElseThrow(() -> missing("MATERIAL_NOT_FOUND", "Material was not found"));
         if (!material.getOwner().getId().equals(userId)) throw forbidden();
         if (material.getType() != MaterialType.TEXT) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MATERIAL_TYPE_MISMATCH", "A TEXT version is required");
         MaterialVersion current = versions.findById(material.getCurrentVersionId()).orElseThrow();

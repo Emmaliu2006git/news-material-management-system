@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -72,6 +73,38 @@ class TextMaterialLifecycleTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("\u0024[0].versionNumber").value(1))
                 .andExpect(jsonPath("\u0024[1].versionNumber").value(2));
+    }
+
+    @Test
+    void currentAndClickedHistoricalViewsHaveTheSameMaterialViewAndSnapshotShape() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma);
+        String materialId = create(emma, projectId, "First version", "First body", "shape-first");
+        mockMvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "shape-second")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Second version\",\"textBody\":\"Second body\"}"))
+                .andExpect(status().isCreated());
+
+        MvcResult current = mockMvc.perform(get("/api/v1/materials/{id}", materialId).session(emma))
+                .andExpect(status().isOk()).andReturn();
+        MvcResult historical = mockMvc.perform(get("/api/v1/materials/{id}/versions/{number}", materialId, 1).session(emma))
+                .andExpect(status().isOk()).andReturn();
+
+        java.util.Map<String, Object> currentView = JsonPath.read(current.getResponse().getContentAsString(), "$");
+        java.util.Map<String, Object> historicalView = JsonPath.read(historical.getResponse().getContentAsString(), "$");
+        assertThat(currentView.keySet()).isEqualTo(historicalView.keySet());
+        assertThat(((java.util.Map<String, Object>) currentView.get("version")).keySet())
+                .isEqualTo(((java.util.Map<String, Object>) historicalView.get("version")).keySet());
+        assertThat(((java.util.Map<String, Object>) ((java.util.Map<String, Object>) currentView.get("version")).get("snapshot")).keySet())
+                .isEqualTo(((java.util.Map<String, Object>) ((java.util.Map<String, Object>) historicalView.get("version")).get("snapshot")).keySet());
+        assertThat(((java.util.Map<String, Object>) ((java.util.Map<String, Object>) ((java.util.Map<String, Object>) currentView.get("version")).get("snapshot")).get("content")).keySet())
+                .isEqualTo(((java.util.Map<String, Object>) ((java.util.Map<String, Object>) ((java.util.Map<String, Object>) historicalView.get("version")).get("snapshot")).get("content")).keySet());
+        assertThat(currentView.get("historical")).isEqualTo(false);
+        assertThat(currentView.get("canEdit")).isEqualTo(true);
+        assertThat(historicalView.get("historical")).isEqualTo(true);
+        assertThat(historicalView.get("canEdit")).isEqualTo(false);
     }
 
     @Test

@@ -5,6 +5,8 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
@@ -31,6 +33,8 @@ public class MaterialVersion {
     @ElementCollection @CollectionTable(name = "material_version_tags", joinColumns = @JoinColumn(name = "version_id"))
     @OrderColumn(name = "position") @Column(name = "tag_value", nullable = false, length = 80)
     private List<String> manualTags = new ArrayList<>();
+    @Enumerated(EnumType.STRING) @Column(name = "content_kind", nullable = false, length = 16, updatable = false)
+    private VersionContentKind contentKind;
     @Column(name = "text_body", columnDefinition = "text", updatable = false) private String textBody;
 
     protected MaterialVersion() {
@@ -47,6 +51,7 @@ public class MaterialVersion {
         this.eventTime = eventTime;
         this.location = location;
         this.manualTags = new ArrayList<>(manualTags);
+        this.contentKind = VersionContentKind.TEXT;
         this.textBody = textBody;
     }
 
@@ -59,5 +64,6 @@ public class MaterialVersion {
     public Instant getEventTime() { return eventTime; }
     public String getLocation() { return location; }
     public List<String> getManualTags() { return List.copyOf(manualTags); }
+    public VersionContentKind getContentKind() { return contentKind; }
     public String getTextBody() { return textBody; }
 }
