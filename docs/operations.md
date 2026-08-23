@@ -53,19 +53,56 @@ docker compose up --build
 
 Open `http://localhost:8080`. Stop without deleting data using `docker compose down`. Only use `docker compose down --volumes` when the named PostgreSQL and MinIO demo volumes are intentionally disposable.
 
-## Environment matrix
+## Compose substitution inputs
 
-Spring Boot relaxed binding also permits equivalent uppercase environment names for `app.*` properties.
+`docker-compose.yml` reads the following host/`.env` variables. The values shown are Compose defaults; copy `.env.example`, replace secrets, and keep `.env` out of Git.
+
+| Compose input | Default | Container mapping / purpose |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | `demo-only-postgres` | PostgreSQL password and app `SPRING_DATASOURCE_PASSWORD` |
+| `MINIO_ROOT_USER` | `demo-minio-user` | MinIO root user and app S3 access key |
+| `MINIO_ROOT_PASSWORD` | `demo-only-minio-password` | MinIO root password and app S3 secret |
+| `MINIO_API_CORS_ALLOW_ORIGIN` | `http://localhost:8080` | Browser origin accepted by MinIO |
+| `SERVER_PORT` | `8080` | App container port, published host port, and app health-check port |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://postgres:5432/news_material` | App JDBC URL |
+| `SPRING_DATASOURCE_USERNAME` | `news_material` | App database identity |
+| `NEWS_MATERIAL_S3_BUCKET` | `news-material-private` | App bucket and MinIO bucket initialization |
+| `AWS_REGION` | `us-east-1` | App S3 region |
+| `NEWS_MATERIAL_S3_ENDPOINT` | `http://minio:9000` | App internal S3 endpoint |
+| `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` | `http://localhost:9000` | Browser-reachable signed URL endpoint |
+| `NEWS_MATERIAL_S3_PATH_STYLE` | `true` | App S3 addressing mode |
+| `NEWS_MATERIAL_AI_PROVIDER` | `local` | App analysis provider |
+| `OPENAI_API_KEY` | empty | App provider credential; needed only when provider is `openai` |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | App Responses API base |
+| `OPENAI_VISION_MODEL` | `gpt-5-mini` | App image-capable model |
+| `OPENAI_CONNECT_TIMEOUT` | `PT3S` | App provider connection timeout |
+| `OPENAI_REQUEST_TIMEOUT` | `PT20S` | App provider request timeout |
+| `ANALYSIS_LEASE_DURATION` | `PT5M` | App stuck-work reclaim lease |
+| `APP_ANALYSIS_SCHEDULING_ENABLED` | `true` | App worker scheduler switch |
+| `APP_ANALYSIS_MAX_ATTEMPTS` | `3` | App automatic attempt limit |
+| `APP_ANALYSIS_BASE_BACKOFF` | `PT1M` | App retry backoff base |
+| `APP_ANALYSIS_POLL_DELAY_MS` | `5000` | App worker poll delay |
+| `APP_UPLOAD_MAX_FILES` | `10` | App files-per-request/snapshot limit |
+| `APP_UPLOAD_MAX_FILE_BYTES` | `52428800` | App 50 MiB per-file limit |
+| `APP_UPLOAD_MAX_TOTAL_BYTES` | `209715200` | App 200 MiB snapshot limit |
+| `APP_UPLOAD_INTENT_TTL` | `PT15M` | App presign/intent lifetime |
+
+Compose keeps these topology values fixed: app profile `demo`; PostgreSQL database/user `news_material`; PostgreSQL service host `postgres`; MinIO service endpoint/ports `minio:9000`, `9000`, and `9001`. The direct JDBC URL and username inputs may point the app at a different database, but they do not reconfigure the included PostgreSQL container. If `SERVER_PORT` changes, also set `MINIO_API_CORS_ALLOW_ORIGIN` to the resulting browser origin. Never use fallback credentials in a shared environment.
+
+## Direct application and cloud environment
+
+These variables/properties are read by Spring Boot when running the JAR/container directly. Spring Boot relaxed binding permits the uppercase `APP_...` names shown for `app.*` properties.
 
 | Variable/property | Default | Required where | Purpose |
 | --- | --- | --- | --- |
 | `SPRING_PROFILES_ACTIVE` | none | Explicit for local/demo | Select runtime mode |
-| `SPRING_DATASOURCE_URL` | PostgreSQL on localhost | Compose/cloud | JDBC URL |
-| `SPRING_DATASOURCE_USERNAME` | `news_material` | Compose/cloud | Database identity |
-| `SPRING_DATASOURCE_PASSWORD` | `news_material` | Compose/cloud | Secret; use secret manager |
+| `SERVER_PORT` | `8080` | Optional | HTTP port |
+| `SPRING_DATASOURCE_URL` | PostgreSQL on localhost | Cloud/direct | JDBC URL |
+| `SPRING_DATASOURCE_USERNAME` | `news_material` | Cloud/direct | Database identity |
+| `SPRING_DATASOURCE_PASSWORD` | `news_material` | Cloud/direct | Secret; use secret manager |
 | `NEWS_MATERIAL_S3_BUCKET` | `news-material-private` | S3/MinIO | Private bucket |
 | `AWS_REGION` | `us-east-1` | S3 | AWS SDK region |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none | MinIO only; avoid static AWS keys | SDK credential chain inputs |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | none | MinIO only; avoid static AWS keys | SDK credential-chain inputs |
 | `NEWS_MATERIAL_S3_ENDPOINT` | empty | MinIO/custom S3 | Internal SDK endpoint |
 | `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` | falls back to S3 endpoint | MinIO/mobile | Browser-reachable signed URL endpoint |
 | `NEWS_MATERIAL_S3_PATH_STYLE` | `false` | `true` for included MinIO | Addressing mode |
@@ -84,7 +121,6 @@ Spring Boot relaxed binding also permits equivalent uppercase environment names 
 | `APP_UPLOAD_MAX_FILE_BYTES` | `52428800` | Optional | 50 MiB per file |
 | `APP_UPLOAD_MAX_TOTAL_BYTES` | `209715200` | Optional | 200 MiB per snapshot |
 | `APP_UPLOAD_INTENT_TTL` | `PT15M` | Optional | Presign/intent lifetime |
-| `SERVER_PORT` | `8080` | Optional | HTTP port |
 
 For TLS deployments also set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true` and an organization-approved `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE` value. Terminate HTTPS only at a trusted proxy and preserve secure-cookie behavior.
 
@@ -284,4 +320,5 @@ Flyway migrations are forward-only. Do not run an older binary against a schema 
 - Local H2 data resets on restart, while local files may remain.
 - Local AI output is deterministic demo metadata, not content understanding.
 - Search is keyword/filter search over current versions, not semantic/vector search.
+- No Java CVE database scanner is configured; run an organization-approved scanner against the resolved Maven runtime graph and container image before release.
 - No teams, roles, Kafka, native app, notifications, collaborative branches/merges, lineage after re-upload, or media editor.

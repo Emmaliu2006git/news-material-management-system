@@ -149,7 +149,7 @@ Show the project list and summarize:
 
 ## Mobile viewport checklist
 
-Desktop browser emulation is automated only for the desktop journey. Complete this checklist manually at a narrow viewport such as 390 × 844, then repeat the upload on one supported real phone before a production-style presentation.
+Automated unit coverage stubs the real `(max-width: 559px)` media query and verifies that the compact navigation branch opens and closes. The packaged Playwright journey runs at desktop size. Neither check proves narrow-layout quality, touch behavior, device permissions, or a real mobile file picker. Complete this checklist manually at a narrow viewport such as 390 × 844, then repeat the upload on one supported real phone before a production-style presentation.
 
 - [ ] Login card fits without horizontal scrolling.
 - [ ] Header, logout control, breadcrumbs, and primary actions remain reachable.

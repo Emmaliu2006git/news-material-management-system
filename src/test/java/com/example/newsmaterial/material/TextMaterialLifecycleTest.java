@@ -117,6 +117,85 @@ class TextMaterialLifecycleTest {
     }
 
     @Test
+    void explicitVersionRouteIsReadOnlyEvenWhenItSelectsTheCurrentVersion() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma);
+        String materialId = create(emma, projectId, "Current v1", "Current body", "current-route-create");
+
+        mockMvc.perform(get("/api/v1/materials/{id}/versions/{number}", materialId, 1).session(emma))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.historical").value(true))
+                .andExpect(jsonPath("$.canEdit").value(false))
+                .andExpect(jsonPath("$.version.versionNumber").value(1))
+                .andExpect(jsonPath("$.version.snapshot.title").value("Current v1"));
+    }
+
+    @Test
+    void createIdempotencyUsesNormalizedPersistedFieldsAndKey() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma);
+        String firstRequest = "{\"projectId\":\"" + projectId + "\",\"title\":\"  Normalized title  \"," +
+                "\"location\":\"  North district  \",\"manualTags\":[\" flood \",\" urgent \"]," +
+                "\"textBody\":\"  Field report  \"}";
+
+        MvcResult first = mockMvc.perform(post("/api/v1/materials/text").session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "  normalized-create  ")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(firstRequest))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version.snapshot.title").value("Normalized title"))
+                .andExpect(jsonPath("$.version.snapshot.location").value("North district"))
+                .andExpect(jsonPath("$.version.snapshot.manualTags[0]").value("flood"))
+                .andExpect(jsonPath("$.version.snapshot.manualTags[1]").value("urgent"))
+                .andExpect(jsonPath("$.version.snapshot.content.textBody").value("Field report"))
+                .andReturn();
+
+        String firstId = JsonPath.read(first.getResponse().getContentAsString(), "$.id");
+        mockMvc.perform(post("/api/v1/materials/text").session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "normalized-create")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"projectId\":\"" + projectId + "\",\"title\":\"Normalized title\"," +
+                                "\"location\":\"North district\",\"manualTags\":[\"flood\",\"urgent\"]," +
+                                "\"textBody\":\"Field report\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(firstId));
+    }
+
+    @Test
+    void versionIdempotencyUsesNormalizedPersistedFieldsAndKey() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma);
+        String materialId = create(emma, projectId, "V1", "V1 body", "normalized-version-create");
+
+        MvcResult first = mockMvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "  normalized-version  ")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"  Verified note  \"," +
+                                "\"location\":\"  River Street  \",\"manualTags\":[\" verified \"]," +
+                                "\"textBody\":\"  Confirmed body  \"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version.snapshot.title").value("Verified note"))
+                .andExpect(jsonPath("$.version.snapshot.location").value("River Street"))
+                .andExpect(jsonPath("$.version.snapshot.manualTags[0]").value("verified"))
+                .andExpect(jsonPath("$.version.snapshot.content.textBody").value("Confirmed body"))
+                .andReturn();
+
+        String versionId = JsonPath.read(first.getResponse().getContentAsString(), "$.version.id");
+        mockMvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "normalized-version")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentVersion\":1,\"title\":\"Verified note\"," +
+                                "\"location\":\"River Street\",\"manualTags\":[\"verified\"]," +
+                                "\"textBody\":\"Confirmed body\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version.id").value(versionId));
+    }
+
+    @Test
     void repeatedIdempotencyKeyReplaysOriginalMaterialAndRejectsDifferentPayload() throws Exception {
         MockHttpSession emma = login("emma");
         String projectId = project(emma);

@@ -11,7 +11,7 @@ This document describes the implemented `/api/v1` contract. Examples use synthet
 - IDs: UUID strings.
 - All endpoints except login and CSRF bootstrap require an authenticated session.
 - All mutating endpoints except login require a current CSRF token.
-- Material and version creation also require a nonblank `Idempotency-Key` header. The web client uses a UUID.
+- Material and version creation also require an `Idempotency-Key` header. After trimming, it must be nonblank and at most 255 characters. The web client uses a UUID.
 
 ## Authentication and CSRF
 
@@ -136,7 +136,7 @@ Every Material response contains stable identity plus one Version snapshot:
 | `materialCreatedTime` | Server-generated time when v1 was created |
 | `currentVersionId` | ID of the current immutable version |
 | `canEdit` | True only for the owner viewing the current version |
-| `historical` | True when the response is a read-only past version |
+| `historical` | True for every explicit `/versions/{versionNumber}` response, including when that number is current |
 | `version` | The selected full Version snapshot |
 
 Common Version fields:
@@ -151,6 +151,16 @@ Common Version fields:
 | `snapshot.location` | No; nullable | User |
 | `snapshot.manualTags` | Always present; may be empty | User |
 | `snapshot.content` | Yes | Discriminated union |
+
+Input limits and normalization applied before fingerprinting or persistence:
+
+- `title`: trim leading/trailing whitespace; the result must be nonblank and at most 240 characters.
+- `location`: trim; blank becomes null; a non-null result is at most 240 characters.
+- Each `manualTags` item: trim; the result must be nonblank and at most 80 characters. Null or blank items are rejected. Duplicate normalized tags keep their first position.
+- A null `manualTags` list becomes an empty list.
+- `textBody`: trim; the result must be nonblank.
+- FILE `textContent`: trim; blank becomes null.
+- `eventTime` and UUID/selectors are not string-normalized.
 
 The content union is:
 
@@ -189,7 +199,7 @@ Idempotency-Key: 88888888-8888-4888-8888-888888888888
 }
 ```
 
-Required: `projectId`, nonblank `title`, nonblank `textBody`. Optional: `eventTime`, `location`, `manualTags` (null is normalized to an empty list). Success returns `201 Created` with a Material whose version number is 1.
+Required: `projectId`, nonblank `title` (maximum 240 after trimming), and nonblank `textBody`. Optional: `eventTime`, `location` (maximum 240 after trimming), and `manualTags` (each normalized tag is nonblank and at most 80; null list becomes empty). Success returns `201 Created` with a Material whose version number is 1.
 
 ## Upload and create FILE material
 
@@ -218,7 +228,7 @@ FILE creation is three steps. The server never receives file bytes in the S3 pro
 }
 ```
 
-`files` must contain 1–10 entries. Each entry requires a filename of at most 255 characters with no control characters, a MIME type of at most 160 characters, a positive size no larger than 52,428,800 bytes, and a 64-digit hexadecimal SHA-256. The full snapshot may not exceed 209,715,200 bytes. Accepted types are `image/*`, `video/*`, `audio/*`, `application/pdf`, and `text/plain`.
+`files` must contain 1–10 entries. Each entry requires a nonblank filename of at most 255 characters with no control characters, a nonblank MIME type of at most 160 characters with no control characters, a positive size no larger than 52,428,800 bytes, and a 64-digit hexadecimal SHA-256. The full snapshot may not exceed 209,715,200 bytes. Accepted types are `image/*`, `video/*`, `audio/*`, `application/pdf`, and `text/plain`.
 
 Success: `201 Created`.
 
@@ -264,7 +274,7 @@ Send one `PUT` to each `uploadUrl`, preserving every `requiredHeaders` entry. S3
 }
 ```
 
-Required: `projectId`, nonblank `title`, and 1–10 distinct, owned, pending, unexpired, successfully uploaded intent IDs. Optional: `eventTime`, `location`, `manualTags`, `textContent`. The order of `uploadIntentIds` becomes display order. Finalization verifies size, MIME type, and checksum before returning `201 Created`.
+Required: `projectId`, nonblank `title` (maximum 240 after trimming), and 1–10 distinct, owned, pending, unexpired, successfully uploaded intent IDs. Optional: `eventTime`, `location` (maximum 240 after trimming), `manualTags` (each normalized tag is nonblank and at most 80), and `textContent`. The order of `uploadIntentIds` becomes display order. Finalization verifies size, MIME type, and checksum before returning `201 Created`.
 
 ## Read current and historical versions
 
@@ -307,7 +317,7 @@ Required: `projectId`, nonblank `title`, and 1–10 distinct, owned, pending, un
 
 ### One historical version
 
-`GET /api/v1/materials/{materialId}/versions/{versionNumber}` returns the same Material layout as current. It sets `historical:true` and `canEdit:false`, even for the owner. Current and history render with the same field layout; history is read-only.
+`GET /api/v1/materials/{materialId}/versions/{versionNumber}` is always the explicit read-only version route and returns the same Material layout as current. It sets `historical:true` and `canEdit:false`, even for the owner and even when `versionNumber` equals the current version. The editable current view is available only from `GET /api/v1/materials/{materialId}`.
 
 ### FILE asset and image analysis
 
@@ -378,7 +388,7 @@ FILE request uses one ordered selector per file:
 
 An `EXISTING` selector may reference only a distinct file in the current version. An `UPLOAD` selector requires a newly uploaded, owned intent. The list must contain 1–10 entries and is the exact new display order. Compatibility fields `fileIds` followed by `uploadIntentIds` are accepted by the backend, but clients should use `files`; mixing both forms returns `422 INVALID_FILE_SET`.
 
-`expectedCurrentVersion` is required. If another write has advanced the material, the server returns `409 VERSION_CONFLICT`; reload current state before retrying.
+`expectedCurrentVersion` is required. Version requests use the same 240-character title/location limits, nonblank 80-character tag-item limit, and trimming/null normalization as creation. If another write has advanced the material, the server returns `409 VERSION_CONFLICT`; reload current state before retrying.
 
 ## Search current material
 
@@ -455,9 +465,11 @@ Success is `200 OK`. A non-owner gets `403 FORBIDDEN`; a non-image or missing an
 
 ## Idempotency
 
-The key scope is authenticated user + operation + `Idempotency-Key`. Operations are create TEXT, create FILE, and create version.
+The key scope is authenticated user + operation + normalized `Idempotency-Key`. Operations are create TEXT, create FILE, and create version. The key is trimmed before lookup and storage; its normalized value must be nonblank and at most 255 characters.
 
-- Same key and same normalized request fingerprint: returns the originally recorded material/version with `201`; no duplicate is created.
+Before both persistence and fingerprinting, the server applies the field normalization defined above: trimmed title/location/manual-tag values, first-occurrence tag deduplication, trimmed TEXT body, and trimmed-or-null FILE notes. Therefore whitespace-only differences in those normalized fields or the key replay the original result. Meaningful characters, tag order, event time, project/material IDs, file order, and file selectors remain fingerprint-significant.
+
+- Same normalized key and same normalized request fingerprint: returns the originally recorded material/version with `201`; no duplicate is created.
 - Same key and different request: `409 IDEMPOTENCY_CONFLICT`.
 - A replay of an older successful version may return `historical:true` if a later version is now current.
 - Reuse the same key only for a retry of the exact same logical request.
