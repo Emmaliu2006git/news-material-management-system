@@ -165,3 +165,39 @@ Status: DONE
 ### Commit
 
 - `aa4324b fix: preserve file finalization retries`
+
+---
+
+## Fix Round 3 — DONE
+
+### Delivered
+
+- Added an isolated backend characterization for FILE version replay before upload-intent validation.
+- The test creates a FILE material, creates version 2 from a fresh uploaded file with a fixed idempotency key, forces that consumed intent's expiry to the epoch, and repeats the exact version request/key.
+- Replay must return the same version ID and version number 2 rather than an expired- or consumed-intent error.
+- No production code changed because the existing service ordering already satisfied the contract.
+
+### TDD / Characterization Evidence
+
+- The new focused test passed on its first run against existing production code.
+- This is recorded as required characterization coverage, not as a fabricated RED result.
+
+### Verification Evidence
+
+- Focused `FileVersionHistoryTest`: 3 tests passed.
+- Full backend suite: 46 tests passed, 0 failures, 0 errors.
+- Frontend unit/integration suite: 3 files, 29 tests passed.
+- Frontend typecheck: passed.
+- Frontend lint: passed with zero warnings.
+- Frontend production build: passed; 52 modules transformed.
+- `git diff --check`: passed with no whitespace errors.
+
+### Self-review
+
+- The request body and `Idempotency-Key` are stored once and reused byte-for-byte in the replay.
+- The direct database update asserts exactly one upload-intent row was expired, so the test cannot silently skip its boundary condition.
+- The returned version ID is compared with the original committed version, not only its version number.
+
+### Commit
+
+- `e8b3281 test: cover expired file version replay`
