@@ -1,5 +1,8 @@
 package com.example.newsmaterial.material.service;
 
+import com.example.newsmaterial.analysis.ImageAnalysis;
+import com.example.newsmaterial.analysis.ImageAnalysisRepository;
+import com.example.newsmaterial.analysis.ImageAnalysisService;
 import com.example.newsmaterial.common.api.ApiException;
 import com.example.newsmaterial.file.*;
 import com.example.newsmaterial.material.api.MaterialApi.*;
@@ -7,6 +10,7 @@ import com.example.newsmaterial.material.domain.*;
 import com.example.newsmaterial.material.persistence.*;
 import com.example.newsmaterial.project.*;
 import com.example.newsmaterial.security.*;
+import com.example.newsmaterial.search.SearchDocumentService;
 import com.example.newsmaterial.upload.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,12 +33,19 @@ public class MaterialService {
     private final UploadIntentService uploads;
     private final FileAssetRepository files;
     private final VersionFileRepository versionFiles;
+    private final ImageAnalysisService imageAnalysisService;
+    private final ImageAnalysisRepository imageAnalyses;
+    private final SearchDocumentService searchDocuments;
 
     public MaterialService(MaterialRepository materials, MaterialVersionRepository versions, IdempotencyRecordRepository idempotency,
                            ProjectRepository projects, UserRepository users, UploadIntentService uploads,
-                           FileAssetRepository files, VersionFileRepository versionFiles) {
+                           FileAssetRepository files, VersionFileRepository versionFiles,
+                           ImageAnalysisService imageAnalysisService, ImageAnalysisRepository imageAnalyses,
+                           SearchDocumentService searchDocuments) {
         this.materials=materials; this.versions=versions; this.idempotency=idempotency; this.projects=projects; this.users=users;
         this.uploads=uploads; this.files=files; this.versionFiles=versionFiles;
+        this.imageAnalysisService=imageAnalysisService; this.imageAnalyses=imageAnalyses;
+        this.searchDocuments=searchDocuments;
     }
 
     @Transactional
@@ -44,7 +55,7 @@ public class MaterialService {
         ReportingProject project=project(request.projectId()); Instant now=Instant.now(); UUID versionId=UUID.randomUUID();
         Material material=new Material(UUID.randomUUID(),project,owner,MaterialType.TEXT,now); material.setCurrentVersionId(versionId); materials.save(material);
         MaterialVersion first=versions.save(new MaterialVersion(versionId,material,1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),clean(request.textBody())));
-        material.setCurrentVersionId(first.getId()); idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_TEXT,key,fp,material.getId(),1,now));
+        material.setCurrentVersionId(first.getId()); searchDocuments.rebuildCurrent(material,first); idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_TEXT,key,fp,material.getId(),1,now));
         return view(material,first,userId,false);
     }
 
@@ -58,7 +69,7 @@ public class MaterialService {
         material.setCurrentVersionId(versionId); materials.save(material);
         MaterialVersion first=versions.save(MaterialVersion.file(versionId,material,1,owner,now,clean(request.title()),request.eventTime(),nullableClean(request.location()),tags(request.manualTags()),nullableClean(request.textContent())));
         attachNew(material,first,owner,intents,0,now); material.setCurrentVersionId(first.getId());
-        idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_FILE,key,fp,material.getId(),1,now)); return view(material,first,userId,false);
+        searchDocuments.rebuildCurrent(material,first); idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_FILE,key,fp,material.getId(),1,now)); return view(material,first,userId,false);
     }
 
     @Transactional(readOnly=true) public MaterialView current(UUID id,UUID userId){Material m=material(id);return view(m,versions.findById(m.getCurrentVersionId()).orElseThrow(),userId,false);}
@@ -109,7 +120,7 @@ public class MaterialService {
                 versionFiles.save(new VersionFile(next,file,order++));
             }
         }
-        material.setCurrentVersionId(next.getId());idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_VERSION,key,fp,materialId,next.getVersionNumber(),now));return view(material,next,userId,false);
+        material.setCurrentVersionId(next.getId());searchDocuments.rebuildCurrent(material,next);idempotency.save(new IdempotencyRecord(UUID.randomUUID(),userId,CREATE_VERSION,key,fp,materialId,next.getVersionNumber(),now));return view(material,next,userId,false);
     }
 
     private List<FileSelectionRequest> fileSelections(MaterialVersionRequest request){
@@ -121,11 +132,18 @@ public class MaterialService {
         if(request.uploadIntentIds()!=null)request.uploadIntentIds().forEach(id->result.add(new FileSelectionRequest(FileSelectionKind.UPLOAD,null,id)));
         return result;
     }
-    private FileAsset newFile(Material material,AppUser owner,UploadIntent intent,Instant now){FileAsset file=files.save(new FileAsset(UUID.randomUUID(),material,owner,intent,now));intent.consume(now);return file;}
+    private FileAsset newFile(Material material,AppUser owner,UploadIntent intent,Instant now){FileAsset file=files.save(new FileAsset(UUID.randomUUID(),material,owner,intent,now));imageAnalysisService.ensurePending(file,now);intent.consume(now);return file;}
     private void attachNew(Material material,MaterialVersion version,AppUser owner,List<UploadIntent> intents,int start,Instant now){int order=start;for(UploadIntent intent:intents){FileAsset f=newFile(material,owner,intent,now);versionFiles.save(new VersionFile(version,f,order++));}}
     private MaterialView replay(UUID userId,String operation,String key,String fp){return idempotency.findByUserIdAndOperationAndIdempotencyKey(userId,operation,key).map(r->{if(!r.getPayloadFingerprint().equals(fp))throw new ApiException(HttpStatus.CONFLICT,"IDEMPOTENCY_CONFLICT","Idempotency-Key was already used with a different request");Material m=material(r.getMaterialId());MaterialVersion v=versions.findByMaterial_IdAndVersionNumber(m.getId(),r.getVersionNumber()).orElseThrow();return view(m,v,userId,!v.getId().equals(m.getCurrentVersionId()));}).orElse(null);}
     private MaterialView view(Material m,MaterialVersion v,UUID viewer,boolean historical){return new MaterialView(m.getId(),m.getProject().getId(),m.getOwner().getId(),m.getType(),m.getMaterialCreatedTime(),m.getCurrentVersionId(),!historical&&m.getOwner().getId().equals(viewer),historical,versionView(v));}
-    private VersionView versionView(MaterialVersion v){VersionContentView content=v.getContentKind()==VersionContentKind.TEXT?new TextVersionContentView(v.getTextBody()):new FileVersionContentView(v.getFileTextContent(),versionFiles.findByVersion_IdOrderByDisplayOrder(v.getId()).stream().map(VersionFile::getFile).map(FileAssetView::from).toList());return new VersionView(v.getId(),v.getVersionNumber(),v.getCreatedBy().getId(),v.getVersionCreatedTime(),new VersionSnapshotView(v.getTitle(),v.getEventTime(),v.getLocation(),v.getManualTags(),content));}
+    private VersionView versionView(MaterialVersion v){VersionContentView content=v.getContentKind()==VersionContentKind.TEXT?new TextVersionContentView(v.getTextBody()):new FileVersionContentView(v.getFileTextContent(),versionFiles.findByVersion_IdOrderByDisplayOrder(v.getId()).stream().map(VersionFile::getFile).map(this::fileView).toList());return new VersionView(v.getId(),v.getVersionNumber(),v.getCreatedBy().getId(),v.getVersionCreatedTime(),new VersionSnapshotView(v.getTitle(),v.getEventTime(),v.getLocation(),v.getManualTags(),content));}
+    private FileAssetView fileView(FileAsset f){
+        ImageAnalysisView analysis=imageAnalyses.findByFile_Id(f.getId()).map(this::analysisView).orElse(null);
+        return new FileAssetView(f.getId(),f.getUploader().getId(),f.getOriginalFilename(),f.getMimeType(),f.getSizeBytes(),f.getChecksumSha256(),f.getFileCreatedTime(),analysis);
+    }
+    private ImageAnalysisView analysisView(ImageAnalysis a){
+        return new ImageAnalysisView(a.getStatus(),a.getAiDescription(),a.getAiTags(),a.getGeneratedTime());
+    }
     private ReportingProject project(UUID id){return projects.findById(id).orElseThrow(()->missing("PROJECT_NOT_FOUND","Project was not found"));}
     private Material material(UUID id){return materials.findById(id).orElseThrow(()->missing("MATERIAL_NOT_FOUND","Material was not found"));}
     private ApiException missing(String code,String message){return new ApiException(HttpStatus.NOT_FOUND,code,message);} private ApiException forbidden(){return new ApiException(HttpStatus.FORBIDDEN,"FORBIDDEN","You do not have permission for this action");}

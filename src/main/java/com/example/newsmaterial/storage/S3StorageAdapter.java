@@ -33,5 +33,9 @@ public class S3StorageAdapter implements StoragePort {
         GetObjectRequest get=GetObjectRequest.builder().bucket(bucket).key(key).responseContentType(mime).responseContentDisposition("attachment; filename=\""+filename.replace("\"","")+"\"").build();
         return presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(duration(expires)).getObjectRequest(get).build()).url().toString();
     }
+    @Override public byte[] readBytes(String key) {
+        try { return client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucket).key(key).build()).asByteArray(); }
+        catch (S3Exception e) { throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,"STORAGE_UNAVAILABLE","Storage could not be read"); }
+    }
     private Duration duration(Instant expires){Duration d=Duration.between(Instant.now(),expires);return d.isNegative()?Duration.ofSeconds(1):d;}
 }

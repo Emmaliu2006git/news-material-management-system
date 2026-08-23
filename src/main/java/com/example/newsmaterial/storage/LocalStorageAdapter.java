@@ -35,7 +35,8 @@ public class LocalStorageAdapter implements StoragePort {
         catch (FileAlreadyExistsException e) { throw new ApiException(HttpStatus.CONFLICT,"UPLOAD_ALREADY_EXISTS","Upload target has already been used"); }
         catch (IOException e) { throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,"STORAGE_UNAVAILABLE","Storage could not be written"); }
     }
-    public byte[] read(String key) { try { return Files.readAllBytes(resolve(key)); } catch(IOException e){ throw new ApiException(HttpStatus.NOT_FOUND,"FILE_NOT_FOUND","File was not found"); } }
+    @Override public byte[] readBytes(String key) { try { return Files.readAllBytes(resolve(key)); } catch(IOException e){ throw new ApiException(HttpStatus.NOT_FOUND,"FILE_NOT_FOUND","File was not found"); } }
+    public byte[] read(String key) { return readBytes(key); }
     private Path meta(String key){return resolve(key+".content-type");}
     private Path resolve(String key){ Path path=root.resolve(key).normalize(); if(!path.startsWith(root)) throw new IllegalArgumentException("Invalid object key"); return path; }
 }

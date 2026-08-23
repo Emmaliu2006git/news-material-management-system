@@ -16,3 +16,6 @@ app:
     local-root: ${java.io.tmpdir}/news-material-storage
   upload:
     intent-ttl: PT15M
+  analysis:
+    provider: local
+    scheduling-enabled: false

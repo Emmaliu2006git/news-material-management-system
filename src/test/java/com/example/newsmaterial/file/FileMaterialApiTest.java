@@ -50,7 +50,7 @@ class FileMaterialApiTest {
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.textContent")).isEqualTo("Reporter context");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[0].originalFilename")).isEqualTo("note.txt");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].originalFilename")).isEqualTo("photo.jpg");
-        assertThat(JsonPath.<Object>read(body, "$.version.snapshot.content.files[1].imageAnalysis")).isNull();
+        assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].imageAnalysis.status")).isEqualTo("PENDING");
         assertThat(JsonPath.<java.util.Map<String, Object>>read(body, "$.version.snapshot.content.files[0]")).doesNotContainKey("objectKey");
 
         MvcResult replay = create(emma, project, "Flood evidence", "Reporter context", first.id(), second.id(), "file-create");

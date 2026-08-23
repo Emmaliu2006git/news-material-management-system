@@ -1,6 +1,6 @@
 package com.example.newsmaterial.material.api;
 
-import com.example.newsmaterial.file.FileAsset;
+import com.example.newsmaterial.analysis.ImageAnalysisStatus;
 import com.example.newsmaterial.material.domain.MaterialType;
 import com.example.newsmaterial.material.service.MaterialService;
 import com.example.newsmaterial.security.AuthenticatedUser;
@@ -40,7 +40,6 @@ public class MaterialApi {
     public sealed interface VersionContentView permits TextVersionContentView, FileVersionContentView {}
     public record TextVersionContentView(String kind, String textBody) implements VersionContentView { public TextVersionContentView(String textBody){this("TEXT",textBody);} }
     public record FileVersionContentView(String kind, String textContent, List<FileAssetView> files) implements VersionContentView { public FileVersionContentView(String textContent,List<FileAssetView> files){this("FILE",textContent,files);} }
-    public record FileAssetView(UUID id, UUID uploaderId, String originalFilename, String mimeType, long sizeBytes, String checksumSha256, Instant fileCreatedTime, Object imageAnalysis) {
-        public static FileAssetView from(FileAsset f){return new FileAssetView(f.getId(),f.getUploader().getId(),f.getOriginalFilename(),f.getMimeType(),f.getSizeBytes(),f.getChecksumSha256(),f.getFileCreatedTime(),null);}
-    }
+    public record FileAssetView(UUID id, UUID uploaderId, String originalFilename, String mimeType, long sizeBytes, String checksumSha256, Instant fileCreatedTime, ImageAnalysisView imageAnalysis) {}
+    public record ImageAnalysisView(ImageAnalysisStatus status, String aiDescription, List<String> aiTags, Instant generatedTime) {}
 }
