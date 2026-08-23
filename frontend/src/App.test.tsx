@@ -274,10 +274,23 @@ describe('material snapshots and permissions', () => {
     renderRoute('/materials/material-file')
 
     await screen.findByRole('heading', { name: 'Street evidence' })
-    for (const value of ['material-file', 'Downtown flood', 'project-flood', 'emma', 'version-file-1', 'file-photo']) {
+    for (const value of ['Downtown flood', 'emma']) {
       expect(screen.getAllByText(value).length).toBeGreaterThan(0)
     }
+    const system = screen.getByRole('region', { name: /^system details$/i })
+    for (const value of [
+      'material-file',
+      'project-flood',
+      'user-emma',
+      'version-file-1',
+    ]) {
+      expect(within(system).getAllByText(value).length).toBeGreaterThan(0)
+    }
     const photo = screen.getByRole('article', { name: /street.jpg/i })
+    const fileSystem = within(photo).getByRole('region', { name: /file system details/i })
+    for (const value of ['file-photo', 'user-emma', 'a'.repeat(64)]) {
+      expect(within(fileSystem).getByText(value)).toBeInTheDocument()
+    }
     expect(within(photo).getByText(/generated/i)).toBeInTheDocument()
     expect(within(photo).getAllByText(/aug 22, 2026/i).length).toBeGreaterThan(0)
   })
@@ -288,6 +301,8 @@ describe('material snapshots and permissions', () => {
 
     expect(await screen.findByRole('heading', { name: 'Initial river level' })).toBeInTheDocument()
     expect(screen.getByText('Water reached the first marker.')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /^system details$/i })).toHaveTextContent('user-emma')
+    expect(screen.getByRole('region', { name: /^system details$/i })).toHaveTextContent('version-text-1')
     expect(screen.getByRole('status')).toHaveTextContent(/historical version.*read-only/i)
     expect(screen.queryByRole('link', { name: /create new version/i })).not.toBeInTheDocument()
   })

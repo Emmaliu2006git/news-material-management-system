@@ -1,4 +1,4 @@
-import { api, putFile, sha256 } from '../api/client'
+import { api, ApiError, putFile, sha256 } from '../api/client'
 import type { UploadIntent } from '../api/types'
 
 export function tags(value: FormDataEntryValue | null) {
@@ -37,6 +37,17 @@ export interface UploadSession {
 
 export function uploadSessionIsValid(session: UploadSession) {
   return session.intents.every((intent) => new Date(intent.expiresAt).getTime() > Date.now())
+}
+
+const DEFINITIVE_UPLOAD_INTENT_FAILURES = new Set([
+  'UPLOAD_INTENT_EXPIRED',
+  'UPLOAD_INTENT_NOT_FOUND',
+  'UPLOAD_INTENT_CONSUMED',
+  'UPLOAD_NOT_VERIFIED',
+])
+
+export function isDefinitiveUploadIntentFailure(error: unknown) {
+  return error instanceof ApiError && DEFINITIVE_UPLOAD_INTENT_FAILURES.has(error.code)
 }
 
 export async function createUploadSession(

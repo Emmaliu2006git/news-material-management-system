@@ -172,6 +172,125 @@ describe('new material', () => {
     })
   })
 
+  it('replays a frozen FILE finalization after its upload intent expires client-side', async () => {
+    let now = Date.parse('2026-08-22T12:00:00Z')
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    let intentRequests = 0
+    let uploads = 0
+    class CountingUploadRequest extends AutoUploadRequest {
+      send(body?: File) {
+        uploads += 1
+        super.send(body)
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', CountingUploadRequest)
+    const attempts: Array<{ key: string | null; body: string }> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const base = baseRoute(input)
+      if (base) return base
+      const url = String(input)
+      if (url.endsWith('/uploads/intents')) {
+        intentRequests += 1
+        return json({ files: [{
+          intentId: 'intent-expiring',
+          objectKey: 'uploads/expiring',
+          uploadUrl: '/api/v1/local-storage/uploads/intent-expiring',
+          requiredHeaders: { 'Content-Type': 'image/jpeg' },
+          expiresAt: '2026-08-22T12:01:00Z',
+        }] }, 201)
+      }
+      if (url.endsWith('/materials/file')) {
+        attempts.push({
+          key: new Headers(init?.headers).get('Idempotency-Key'),
+          body: String(init?.body),
+        })
+        return attempts.length === 1
+          ? Promise.reject(new TypeError('Final response was lost'))
+          : json(fileMaterial, 201)
+      }
+      if (url.endsWith('/materials/material-file/versions')) return json([fileMaterial.version])
+      if (url.endsWith('/materials/material-file')) return json(fileMaterial)
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/projects/project-flood/new')
+
+    await actor.click(await screen.findByRole('radio', { name: /file material/i }))
+    await actor.type(screen.getByLabelText(/^title/i), 'Street evidence')
+    await actor.upload(screen.getByLabelText(/^files/i), uploadedFile())
+    await actor.click(screen.getByRole('button', { name: /create material/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/final response was lost/i)
+
+    now = Date.parse('2026-08-22T12:02:00Z')
+    await actor.click(screen.getByRole('button', { name: /create material/i }))
+    expect(await screen.findByRole('heading', { name: 'Street evidence' })).toBeInTheDocument()
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]).toEqual(attempts[0])
+    expect(intentRequests).toBe(1)
+    expect(uploads).toBe(1)
+  })
+
+  it('safely resets uploads only after a definitive uncommitted expired-intent response', async () => {
+    let intentRequests = 0
+    let uploads = 0
+    class CountingUploadRequest extends AutoUploadRequest {
+      send(body?: File) {
+        uploads += 1
+        super.send(body)
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', CountingUploadRequest)
+    const attempts: Array<{ key: string | null; body: string }> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const base = baseRoute(input)
+      if (base) return base
+      const url = String(input)
+      if (url.endsWith('/uploads/intents')) {
+        intentRequests += 1
+        const suffix = intentRequests
+        return json({ files: [{
+          intentId: `intent-${suffix}`,
+          objectKey: `uploads/${suffix}`,
+          uploadUrl: `/api/v1/local-storage/uploads/intent-${suffix}`,
+          requiredHeaders: { 'Content-Type': 'image/jpeg' },
+          expiresAt: '2099-08-22T16:00:00Z',
+        }] }, 201)
+      }
+      if (url.endsWith('/materials/file')) {
+        attempts.push({
+          key: new Headers(init?.headers).get('Idempotency-Key'),
+          body: String(init?.body),
+        })
+        return attempts.length === 1
+          ? json({
+            code: 'UPLOAD_INTENT_EXPIRED',
+            message: 'Upload intent has expired',
+            requestId: 'expired-request',
+            details: [],
+          }, 410)
+          : json(fileMaterial, 201)
+      }
+      if (url.endsWith('/materials/material-file/versions')) return json([fileMaterial.version])
+      if (url.endsWith('/materials/material-file')) return json(fileMaterial)
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/projects/project-flood/new')
+
+    await actor.click(await screen.findByRole('radio', { name: /file material/i }))
+    await actor.type(screen.getByLabelText(/^title/i), 'Street evidence')
+    await actor.upload(screen.getByLabelText(/^files/i), uploadedFile())
+    await actor.click(screen.getByRole('button', { name: /create material/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/expired/i)
+
+    await actor.click(screen.getByRole('button', { name: /create material/i }))
+    expect(await screen.findByRole('heading', { name: 'Street evidence' })).toBeInTheDocument()
+    expect(intentRequests).toBe(2)
+    expect(uploads).toBe(2)
+    expect(attempts[1].key).not.toBe(attempts[0].key)
+    expect(JSON.parse(attempts[1].body).uploadIntentIds).toEqual(['intent-2'])
+  })
+
   it('retries only a failed PUT with its original intent before finalizing ordered files', async () => {
     const uploadAttempts = new Map<string, number>()
     class PartialUploadRequest extends AutoUploadRequest {
@@ -327,6 +446,8 @@ describe('owner version editor', () => {
   })
 
   it('replays a FILE version finalization with the same key, payload, intents, and order', async () => {
+    let now = Date.parse('2026-08-22T12:00:00Z')
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
     let intentRequests = 0
     let uploads = 0
     class CountingUploadRequest extends AutoUploadRequest {
@@ -348,7 +469,7 @@ describe('owner version editor', () => {
           objectKey: 'uploads/new',
           uploadUrl: '/api/v1/local-storage/uploads/intent-new',
           requiredHeaders: { 'Content-Type': 'image/jpeg' },
-          expiresAt: '2099-08-22T16:00:00Z',
+          expiresAt: '2026-08-22T12:01:00Z',
         }] }, 201)
       }
       if (url.endsWith('/materials/material-file') && (!init?.method || init.method === 'GET')) return json(fileMaterial)
@@ -374,6 +495,7 @@ describe('owner version editor', () => {
     await actor.click(screen.getByRole('button', { name: /save new version/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/final response was lost/i)
 
+    now = Date.parse('2026-08-22T12:02:00Z')
     await actor.click(screen.getByRole('button', { name: /save new version/i }))
     await waitFor(() => expect(attempts).toHaveLength(2))
     expect(attempts[1]).toEqual(attempts[0])

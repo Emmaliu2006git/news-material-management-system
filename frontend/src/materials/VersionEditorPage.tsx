@@ -8,6 +8,7 @@ import {
   createUploadSession,
   eventTime,
   idempotencyKey,
+  isDefinitiveUploadIntentFailure,
   optional,
   tags,
   uploadPendingFiles,
@@ -109,45 +110,73 @@ export function VersionEditorPage() {
       manualTags: tags(data.get('manualTags')),
     }
     try {
-      let payload: VersionInput
+      let attempt: SubmissionAttempt
       if (material.type === 'TEXT') {
-        payload = { ...common, textBody: String(data.get('textBody')).trim() }
+        const payload: VersionInput = { ...common, textBody: String(data.get('textBody')).trim() }
+        const fingerprint = JSON.stringify(payload)
+        attempt = submission.current?.fingerprint === fingerprint
+          ? submission.current
+          : { fingerprint, key: idempotencyKey(), payload }
+        submission.current = attempt
       } else {
-        const fresh = orderedFiles.filter((item): item is Extract<OrderedFile, { kind: 'UPLOAD' }> => item.kind === 'UPLOAD')
-        let session = uploadSession.current
-        if (!session || !uploadSessionIsValid(session)) {
-          session = fresh.length
-            ? await createUploadSession(fresh.map((item) => item.file), (index, progress) => {
-              const key = fresh[index].key
-              setOrderedFiles((current) => current.map((item) =>
-                item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
-              ))
-            })
-            : { intents: [], uploaded: new Set() }
-          uploadSession.current = session
-        }
-        await uploadPendingFiles(fresh.map((item) => item.file), session, (index, progress) => {
-          const key = fresh[index].key
-          setOrderedFiles((current) => current.map((item) =>
-            item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
-          ))
+        const textContent = optional(data.get('textContent'))
+        const fingerprint = JSON.stringify({
+          ...common,
+          textContent,
+          files: orderedFiles.map((item) => item.kind === 'EXISTING'
+            ? { kind: item.kind, fileId: item.asset.id }
+            : {
+              kind: item.kind,
+              name: item.file.name,
+              type: item.file.type,
+              size: item.file.size,
+              lastModified: item.file.lastModified,
+            }),
         })
-        const intentIds = new Map(fresh.map((item, index) => [item.key, session.intents[index].intentId]))
-        const files: FileSelection[] = orderedFiles.map((item) => item.kind === 'EXISTING'
-          ? { kind: 'EXISTING', fileId: item.asset.id, uploadIntentId: null }
-          : { kind: 'UPLOAD', fileId: null, uploadIntentId: intentIds.get(item.key)! })
-        payload = { ...common, textContent: optional(data.get('textContent')), files }
+        const previous = submission.current
+        if (previous?.fingerprint === fingerprint) {
+          attempt = previous
+        } else {
+          const fresh = orderedFiles.filter((item): item is Extract<OrderedFile, { kind: 'UPLOAD' }> => item.kind === 'UPLOAD')
+          let session = uploadSession.current
+          if (!session || !uploadSessionIsValid(session)) {
+            session = fresh.length
+              ? await createUploadSession(fresh.map((item) => item.file), (index, progress) => {
+                const key = fresh[index].key
+                setOrderedFiles((current) => current.map((item) =>
+                  item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
+                ))
+              })
+              : { intents: [], uploaded: new Set() }
+            uploadSession.current = session
+          }
+          await uploadPendingFiles(fresh.map((item) => item.file), session, (index, progress) => {
+            const key = fresh[index].key
+            setOrderedFiles((current) => current.map((item) =>
+              item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
+            ))
+          })
+          const intentIds = new Map(fresh.map((item, index) => [item.key, session.intents[index].intentId]))
+          const files: FileSelection[] = orderedFiles.map((item) => item.kind === 'EXISTING'
+            ? { kind: 'EXISTING', fileId: item.asset.id, uploadIntentId: null }
+            : { kind: 'UPLOAD', fileId: null, uploadIntentId: intentIds.get(item.key)! })
+          const payload: VersionInput = { ...common, textContent, files }
+          attempt = { fingerprint, key: idempotencyKey(), payload }
+          submission.current = attempt
+        }
       }
-      const fingerprint = JSON.stringify(payload)
-      if (submission.current?.fingerprint !== fingerprint) {
-        submission.current = { fingerprint, key: idempotencyKey(), payload }
-      }
-      const attempt = submission.current
       const created = await api.createVersion(id, attempt.payload, attempt.key)
       navigate(`/materials/${created.id}`, { replace: true })
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'VERSION_CONFLICT') {
         setError('A newer version exists. Reload this page before creating another version.')
+      } else if (material.type === 'FILE' && isDefinitiveUploadIntentFailure(caught)) {
+        uploadSession.current = null
+        submission.current = null
+        setOrderedFiles((current) => current.map((item) => item.kind === 'UPLOAD'
+          ? { ...item, progress: { name: item.file.name, percent: 0, status: 'hashing' } }
+          : item))
+        setError(`${caught instanceof Error ? caught.message : 'The upload authorization is no longer valid.'} Retry to upload the files again safely.`)
       } else {
         setError(caught instanceof Error ? caught.message : 'The version could not be created.')
       }

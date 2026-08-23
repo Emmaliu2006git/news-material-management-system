@@ -7,6 +7,7 @@ import {
   createUploadSession,
   eventTime,
   idempotencyKey,
+  isDefinitiveUploadIntentFailure,
   optional,
   tags,
   uploadPendingFiles,
@@ -81,33 +82,51 @@ export function NewMaterialPage() {
         const attempt = submission.current
         created = await api.createText(attempt.payload as TextMaterialInput, attempt.key)
       } else {
-        let session = uploadSession.current
-        if (!session || !uploadSessionIsValid(session)) {
-          session = await createUploadSession(files, (index, next) => {
+        const textContent = optional(data.get('textContent'))
+        const fingerprint = JSON.stringify({
+          ...common,
+          textContent,
+          files: files.map((file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            lastModified: file.lastModified,
+          })),
+        })
+        let attempt = submission.current
+        if (attempt?.fingerprint !== fingerprint) {
+          let session = uploadSession.current
+          if (!session || !uploadSessionIsValid(session)) {
+            session = await createUploadSession(files, (index, next) => {
+              setProgress((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))
+            })
+            uploadSession.current = session
+          }
+          await uploadPendingFiles(files, session, (index, next) => {
             setProgress((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))
           })
-          uploadSession.current = session
+          const payload: FileMaterialInput = {
+            ...common,
+            textContent,
+            uploadIntentIds: session.intents.map((intent) => intent.intentId),
+          }
+          attempt = { fingerprint, key: idempotencyKey(), payload }
+          submission.current = attempt
         }
-        await uploadPendingFiles(files, session, (index, next) => {
-          setProgress((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))
-        })
-        const payload: FileMaterialInput = {
-          ...common,
-          textContent: optional(data.get('textContent')),
-          uploadIntentIds: session.intents.map((intent) => intent.intentId),
-        }
-        const fingerprint = JSON.stringify(payload)
-        if (submission.current?.fingerprint !== fingerprint) {
-          submission.current = { fingerprint, key: idempotencyKey(), payload }
-        }
-        const attempt = submission.current
         created = await api.createFile(attempt.payload as FileMaterialInput, attempt.key)
       }
       navigate(`/materials/${created.id}`, { replace: true })
     } catch (caught) {
-      setError(caught instanceof ApiError || caught instanceof Error
-        ? caught.message
-        : 'The material could not be created. You can retry safely.')
+      if (type === 'FILE' && isDefinitiveUploadIntentFailure(caught)) {
+        uploadSession.current = null
+        submission.current = null
+        setProgress(files.map((file) => ({ name: file.name, percent: 0, status: 'hashing' })))
+        setError(`${caught instanceof Error ? caught.message : 'The upload authorization is no longer valid.'} Retry to upload the files again safely.`)
+      } else {
+        setError(caught instanceof ApiError || caught instanceof Error
+          ? caught.message
+          : 'The material could not be created. You can retry safely.')
+      }
     } finally {
       setSubmitting(false)
     }

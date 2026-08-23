@@ -17,7 +17,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.security.MessageDigest;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.HexFormat;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -53,6 +56,11 @@ class FileMaterialApiTest {
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].originalFilename")).isEqualTo("photo.jpg");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].imageAnalysis.status")).isEqualTo("PENDING");
         assertThat(JsonPath.<java.util.Map<String, Object>>read(body, "$.version.snapshot.content.files[0]")).doesNotContainKey("objectKey");
+
+        jdbc.update("update upload_intents set expires_at = ? where id in (?, ?)",
+                Timestamp.from(Instant.EPOCH),
+                UUID.fromString(first.id()),
+                UUID.fromString(second.id()));
 
         MvcResult replay = create(emma, project, "Flood evidence", "Reporter context", first.id(), second.id(), "file-create");
         assertThat(JsonPath.<String>read(replay.getResponse().getContentAsString(), "$.id")).isEqualTo(materialId);

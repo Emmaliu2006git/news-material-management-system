@@ -277,6 +277,11 @@ progress { width: 100%; accent-color: var(--brand); }
 .file-icon { display: grid; width: 2.4rem; height: 2.4rem; flex: 0 0 auto; place-items: center; border-radius: .55rem; color: #46514a; background: #ecefe9; font-size: .62rem; font-weight: 800; }
 .match-pill { padding: .3rem .45rem; color: #654714; background: #fff0bd; }
 .compact-meta { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin: .8rem 0; }
+.system-details { background: #f7f8f5; }
+.file-system-details { margin: .8rem 0; padding: .7rem; border-radius: .55rem; background: #f7f8f5; }
+.file-system-details h4 { margin: 0; color: var(--muted); font-size: .76rem; }
+.compact-meta--system { grid-template-columns: 1fr; }
+.compact-meta--system dd { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: normal; }
 .analysis-panel { margin: .8rem 0; padding: .8rem; border: 1px solid #ead8a9; border-radius: .65rem; background: #fffaf0; }
 .analysis-panel__heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .analysis-panel h4, .analysis-panel p { margin-bottom: .5rem; }
