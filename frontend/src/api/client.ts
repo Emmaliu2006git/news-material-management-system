@@ -1,5 +1,8 @@
+import { sha256 as nobleSha256 } from '@noble/hashes/sha256'
+import { bytesToHex } from '@noble/hashes/utils'
 import type {
   ApiErrorBody,
+  Capabilities,
   FileMaterialInput,
   Material,
   Project,
@@ -9,7 +12,7 @@ import type {
   UploadFileSpec,
   UploadIntent,
   User,
-  Version,
+  VersionSummary,
   VersionInput,
 } from './types'
 
@@ -82,6 +85,7 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => apiRequest<void>('/api/v1/auth/logout', { method: 'POST' }, true),
+  capabilities: () => apiRequest<Capabilities>('/api/v1/capabilities'),
   listProjects: () => apiRequest<Project[]>('/api/v1/projects'),
   createProject: (title: string) =>
     apiRequest<Project>('/api/v1/projects', {
@@ -99,7 +103,7 @@ export const api = {
   material: (id: string) => apiRequest<Material>(`/api/v1/materials/${id}`),
   historicalMaterial: (id: string, number: number) =>
     apiRequest<Material>(`/api/v1/materials/${id}/versions/${number}`),
-  versions: (id: string) => apiRequest<Version[]>(`/api/v1/materials/${id}/versions`),
+  versions: (id: string) => apiRequest<VersionSummary[]>(`/api/v1/materials/${id}/versions`),
   createText: (input: TextMaterialInput, key: string) =>
     apiRequest<Material>('/api/v1/materials/text', {
       method: 'POST',
@@ -130,8 +134,16 @@ export const api = {
 }
 
 export async function sha256(file: File) {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (globalThis.crypto?.subtle) {
+    try {
+      const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+      return bytesToHex(new Uint8Array(digest))
+    } catch {
+      // Web Crypto may be exposed but unusable on an insecure mobile/LAN origin.
+    }
+  }
+  return bytesToHex(nobleSha256(bytes))
 }
 
 export async function putFile(

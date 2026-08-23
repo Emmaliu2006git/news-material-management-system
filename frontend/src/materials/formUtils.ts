@@ -1,5 +1,5 @@
 import { api, ApiError, putFile, sha256 } from '../api/client'
-import type { UploadIntent } from '../api/types'
+import type { UploadIntent, UploadPolicy } from '../api/types'
 
 export function tags(value: FormDataEntryValue | null) {
   return String(value ?? '')
@@ -22,6 +22,28 @@ export function idempotencyKey() {
   return typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `request-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+export function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`
+  return `${Math.round(bytes / (1024 * 1024))} MiB`
+}
+
+export function validateFilePolicy(
+  files: Array<{ name: string; size: number }>,
+  policy: UploadPolicy,
+): string | null {
+  if (files.length > policy.maxFiles) return `Choose no more than ${policy.maxFiles} files.`
+  const oversized = files.find((file) => file.size > policy.maxFileBytes)
+  if (oversized) {
+    return `${oversized.name} is larger than the ${formatBytes(policy.maxFileBytes)} per-file limit.`
+  }
+  const total = files.reduce((sum, file) => sum + file.size, 0)
+  if (total > policy.maxTotalBytes) {
+    return `The selected files total ${formatBytes(total)}; the limit is ${formatBytes(policy.maxTotalBytes)}.`
+  }
+  return null
 }
 
 export interface UploadProgress {

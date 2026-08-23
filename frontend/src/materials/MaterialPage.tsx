@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { Material, Version } from '../api/types'
+import type { Material, VersionSummary } from '../api/types'
 import { PageState } from '../components/Layout'
 import { MaterialSnapshotView } from './MaterialSnapshotView'
 
@@ -9,7 +9,7 @@ export function MaterialPage() {
   const { id = '', number } = useParams()
   const [params] = useSearchParams()
   const [material, setMaterial] = useState<Material | null>(null)
-  const [versions, setVersions] = useState<Version[]>([])
+  const [versions, setVersions] = useState<VersionSummary[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export function MaterialPage() {
                 <li key={version.id} className={current ? 'version-timeline__current' : ''}>
                   <Link to={current ? `/materials/${material.id}` : `/materials/${material.id}/versions/${version.versionNumber}`}>
                     <strong>Version {version.versionNumber}</strong>
-                    <span>{version.snapshot.title}</span>
+                    <span>{version.title}</span>
                     <time dateTime={version.versionCreatedTime}>{new Date(version.versionCreatedTime).toLocaleDateString()}</time>
                   </Link>
                 </li>

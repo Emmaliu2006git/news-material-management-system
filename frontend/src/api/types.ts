@@ -64,6 +64,25 @@ export interface Version {
   snapshot: VersionSnapshot
 }
 
+export interface VersionSummary {
+  id: string
+  versionNumber: number
+  createdBy: string
+  creatorUsername: string
+  versionCreatedTime: string
+  title: string
+}
+
+export interface UploadPolicy {
+  maxFiles: number
+  maxFileBytes: number
+  maxTotalBytes: number
+}
+
+export interface Capabilities {
+  upload: UploadPolicy
+}
+
 export interface Material {
   id: string
   projectId: string

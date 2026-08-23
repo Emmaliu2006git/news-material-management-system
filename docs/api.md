@@ -36,6 +36,8 @@ Success: `200 OK`. The response sets `JSESSIONID`.
   "username": "emma"
 }
 ```
+A successful login applies the configured session-authentication strategy before saving the security context. If the caller already has an anonymous session (for example after CSRF bootstrap), its session ID is rotated; the old ID cannot authenticate.
+
 
 Invalid credentials return `401 INVALID_CREDENTIALS`.
 
@@ -73,6 +75,22 @@ The browser client fetches a fresh token before each mutation. A missing or inva
 ### Logout
 
 `POST /api/v1/auth/logout` requires session and CSRF and returns `204 No Content`. The server invalidates the session.
+
+## Capabilities
+
+`GET /api/v1/capabilities` requires authentication and returns the active server upload policy:
+
+```json
+{
+  "upload": {
+    "maxFiles": 10,
+    "maxFileBytes": 52428800,
+    "maxTotalBytes": 209715200
+  }
+}
+```
+
+The defaults are 10 files, 50 MiB per file, and 200 MiB per FILE snapshot. Deployments may configure other values. The browser reads this endpoint and validates new FILE materials and retained-plus-new version snapshots with the same policy; it does not hardcode the defaults.
 
 ## Permissions
 
@@ -228,7 +246,7 @@ FILE creation is three steps. The server never receives file bytes in the S3 pro
 }
 ```
 
-`files` must contain 1–10 entries. Each entry requires a nonblank filename of at most 255 characters with no control characters, a nonblank MIME type of at most 160 characters with no control characters, a positive size no larger than 52,428,800 bytes, and a 64-digit hexadecimal SHA-256. The full snapshot may not exceed 209,715,200 bytes. Accepted types are `image/*`, `video/*`, `audio/*`, `application/pdf`, and `text/plain`.
+`files` must fit the active capabilities policy (defaults: 1–10 entries, 52,428,800 bytes per file, 209,715,200 bytes total). Each entry requires a nonblank filename of at most 255 characters with no control characters, a nonblank MIME type of at most 160 characters with no control characters, a positive size, and a 64-digit hexadecimal SHA-256. Accepted types are `image/*`, `video/*`, `audio/*`, `application/pdf`, and `text/plain`.
 
 Success: `201 Created`.
 
@@ -274,7 +292,7 @@ Send one `PUT` to each `uploadUrl`, preserving every `requiredHeaders` entry. S3
 }
 ```
 
-Required: `projectId`, nonblank `title` (maximum 240 after trimming), and 1–10 distinct, owned, pending, unexpired, successfully uploaded intent IDs. Optional: `eventTime`, `location` (maximum 240 after trimming), `manualTags` (each normalized tag is nonblank and at most 80), and `textContent`. The order of `uploadIntentIds` becomes display order. Finalization verifies size, MIME type, and checksum before returning `201 Created`.
+Required: `projectId`, nonblank `title` (maximum 240 after trimming), and a capability-compliant list of distinct, owned, pending, unexpired, successfully uploaded intent IDs. Optional: `eventTime`, `location` (maximum 240 after trimming), `manualTags` (each normalized tag is nonblank and at most 80), and `textContent`. The order of `uploadIntentIds` becomes display order. Finalization re-applies count, per-file, total-size, MIME, and checksum verification before returning `201 Created`.
 
 ## Read current and historical versions
 
@@ -313,7 +331,22 @@ Required: `projectId`, nonblank `title` (maximum 240 after trimming), and 1–10
 
 ### Version list
 
-`GET /api/v1/materials/{materialId}/versions` returns `200 OK` with full Version snapshots ordered by ascending `versionNumber`. It does not wrap them in Material identity.
+`GET /api/v1/materials/{materialId}/versions` returns lightweight summaries ordered by ascending `versionNumber`; it never includes snapshots, text, files, checksums, or AI data:
+
+```json
+[
+  {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "versionNumber": 2,
+    "createdBy": "11111111-1111-4111-8111-111111111111",
+    "creatorUsername": "emma",
+    "versionCreatedTime": "2026-08-22T15:30:00Z",
+    "title": "Verified bridge note"
+  }
+]
+```
+
+Select `GET /api/v1/materials/{id}/versions/{number}` for one complete read-only snapshot. Pagination is intentionally deferred for the two-week demo scope.
 
 ### One historical version
 
@@ -386,7 +419,9 @@ FILE request uses one ordered selector per file:
 }
 ```
 
-An `EXISTING` selector may reference only a distinct file in the current version. An `UPLOAD` selector requires a newly uploaded, owned intent. The list must contain 1–10 entries and is the exact new display order. Compatibility fields `fileIds` followed by `uploadIntentIds` are accepted by the backend, but clients should use `files`; mixing both forms returns `422 INVALID_FILE_SET`.
+An `EXISTING` selector may reference only a distinct file in the current version. An `UPLOAD` selector requires a newly uploaded, owned intent. The list must fit the active capability policy and is the exact new display order. Legacy top-level `fileIds` and `uploadIntentIds` are not accepted by the next-version endpoint.
+
+The version request is a strict union. TEXT accepts `textBody` and rejects `textContent` or `files` even when an opposite-type field is explicitly null. FILE accepts optional `textContent` plus required ordered `files` and rejects `textBody`. Unknown properties and wrong/ignored union fields fail with `400` before idempotency fingerprinting.
 
 `expectedCurrentVersion` is required. Version requests use the same 240-character title/location limits, nonblank 80-character tag-item limit, and trimming/null normalization as creation. If another write has advanced the material, the server returns `409 VERSION_CONFLICT`; reload current state before retrying.
 
@@ -491,7 +526,7 @@ Implemented stable statuses and codes:
 
 | HTTP | Codes |
 | --- | --- |
-| 400 | `VALIDATION_ERROR`, `INVALID_UPLOAD_REQUEST` |
+| 400 | `VALIDATION_ERROR`, `INVALID_REQUEST`, `INVALID_VERSION_CONTENT`, `INVALID_UPLOAD_REQUEST` |
 | 401 | `AUTHENTICATION_REQUIRED`, `INVALID_CREDENTIALS` |
 | 403 | `FORBIDDEN` (authorization or CSRF) |
 | 404 | `PROJECT_NOT_FOUND`, `MATERIAL_NOT_FOUND`, `VERSION_NOT_FOUND`, `FILE_NOT_FOUND`, `UPLOAD_INTENT_NOT_FOUND`, `ANALYSIS_NOT_FOUND` |
@@ -502,4 +537,4 @@ Implemented stable statuses and codes:
 | 422 | `INVALID_FILE_SET`, `UPLOAD_METADATA_MISMATCH`, `UPLOAD_NOT_VERIFIED` |
 | 503 | `STORAGE_UNAVAILABLE` |
 
-Malformed JSON and failures outside the handled application paths are not a versioned public error contract. Clients should show a generic error and retain idempotency keys for safe retries.
+Malformed JSON/unknown enums or properties, invalid UUID/path types, missing headers/parameters, bean validation, method validation, and constraint violations all use exactly `code`, `message`, `requestId`, and `details`. Field-level validation details contain the real field and validator message. Authentication, authorization, and CSRF errors use the same envelope shape.

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { FileMaterialInput, MaterialType, Project, TextMaterialInput } from '../api/types'
+import type { FileMaterialInput, MaterialType, Project, TextMaterialInput, UploadPolicy } from '../api/types'
 import {
   createUploadSession,
   eventTime,
@@ -12,6 +12,7 @@ import {
   tags,
   uploadPendingFiles,
   uploadSessionIsValid,
+  validateFilePolicy,
 } from './formUtils'
 import type { UploadProgress, UploadSession } from './formUtils'
 
@@ -21,6 +22,7 @@ export function NewMaterialPage() {
   const { id: projectId = '' } = useParams()
   const navigate = useNavigate()
   const [project, setProject] = useState<Project | null>(null)
+  const [uploadPolicy, setUploadPolicy] = useState<UploadPolicy | null>(null)
   const [type, setType] = useState<MaterialType>('TEXT')
   const [files, setFiles] = useState<File[]>([])
   const [progress, setProgress] = useState<UploadProgress[]>([])
@@ -30,13 +32,23 @@ export function NewMaterialPage() {
   const submission = useRef<SubmissionAttempt | null>(null)
 
   useEffect(() => {
-    api.listProjects().then((all) => setProject(all.find((item) => item.id === projectId) ?? null)).catch(() => undefined)
+    Promise.all([api.listProjects(), api.capabilities()])
+      .then(([all, capabilities]) => {
+        setProject(all.find((item) => item.id === projectId) ?? null)
+        setUploadPolicy(capabilities.upload)
+      })
+      .catch((caught) => setError(caught instanceof Error ? caught.message : 'Upload limits could not be loaded.'))
   }, [projectId])
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.currentTarget.files ?? [])
-    if (selected.length > 10) {
-      setError('Choose no more than 10 files.')
+    if (!uploadPolicy) {
+      setError('Upload limits are unavailable. Reload the page.')
+      return
+    }
+    const policyError = validateFilePolicy(selected, uploadPolicy)
+    if (policyError) {
+      setError(policyError)
       return
     }
     setFiles(selected)
@@ -58,6 +70,17 @@ export function NewMaterialPage() {
     if (type === 'FILE' && files.length === 0) {
       setError('File material requires at least one file.')
       return
+    }
+    if (type === 'FILE') {
+      if (!uploadPolicy) {
+        setError('Upload limits are unavailable. Reload the page.')
+        return
+      }
+      const policyError = validateFilePolicy(files, uploadPolicy)
+      if (policyError) {
+        setError(policyError)
+        return
+      }
     }
     setSubmitting(true)
     const data = new FormData(event.currentTarget)
@@ -152,7 +175,7 @@ export function NewMaterialPage() {
           </label>
           <label className={type === 'FILE' ? 'type-option type-option--selected' : 'type-option'}>
             <input type="radio" name="type" value="FILE" checked={type === 'FILE'} onChange={() => chooseType('FILE')} />
-            <span><strong>File material</strong><small>One to ten photos, videos, audio clips, PDFs, or notes.</small></span>
+            <span><strong>File material</strong><small>Up to {uploadPolicy?.maxFiles ?? '…'} files, within the server limits.</small></span>
           </label>
         </fieldset>
         <div className="form-grid">

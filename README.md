@@ -60,7 +60,7 @@ Run every check, including the packaged-JAR browser journey:
 ./scripts/test-all.sh
 ```
 
-The deterministic order is: locked install, type check, lint, frontend unit tests, frontend build, backend verification/package, Playwright Chromium install, and Playwright E2E. The E2E uses generated names and tiny synthetic files; it covers login, project creation, text history/current-only search, multi-file upload/download, per-image AI success and isolated failure, and owner authorization.
+The deterministic order is: locked install, type check, lint, frontend unit tests, frontend build, backend verification/package, Playwright Chromium install, and packaged-JAR E2E in desktop Chromium and an emulated Pixel 7. Both projects run the same generated login, project, history/search, multi-file upload/download, AI-isolation, and owner-authorization journey.
 
 Focused packaging is also available with:
 
@@ -81,10 +81,13 @@ Open `http://localhost:8080`. Compose starts the application, PostgreSQL with Fl
 This repository was developed in WSL where the Docker daemon was unavailable, so Compose is guarded by an automated configuration contract but was not live-started here. On Windows, enable the distribution under **Docker Desktop → Settings → Resources → WSL Integration** before running it.
 
 To open the demo from another device, set `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` and `MINIO_API_CORS_ALLOW_ORIGIN` in `.env` to hostnames/IPs that device can reach. `localhost` on a phone means the phone itself.
+The Compose HTTP demo explicitly sets `SERVER_SERVLET_SESSION_COOKIE_SECURE=false`. Base/cloud configuration is fail-safe (`Secure`, `HttpOnly`, `SameSite=Lax`) and expects HTTPS. Do not carry the demo override into a shared TLS deployment.
 
 Stop services with `docker compose down`. Add `--volumes` only when you intentionally want to delete demo database and object data.
 
 ## Production configuration
+
+No cloud account is seeded and no registration endpoint exists. Use the supported one-time `provision-user` procedure in [`docs/operations.md`](docs/operations.md#one-time-cloud-account-provisioning).
 
 ### PostgreSQL extension prerequisite
 
@@ -137,6 +140,7 @@ File bytes travel directly between the browser and S3/MinIO using short-lived pr
 
 ## Current limitations
 
+- Desktop and Pixel 7 emulation are automated; a real phone file picker, device permissions, and LAN/TLS routing remain manual acceptance checks.
 - No native iOS/Android app; use the responsive web URL.
 - No teams, roles, administrator workflow, notifications, or cross-project provenance tracking.
 - Search is current-version keyword/filter search, not semantic/vector search, and does not search historical versions.
@@ -149,6 +153,6 @@ File bytes travel directly between the browser and S3/MinIO using short-lived pr
 - **Java/Node diagnostic:** run the scripts; they stop early with the missing prerequisite and required version.
 - **Port already used:** free ports 5173/8080 for development, or 8080/9000/9001 for Compose.
 - **Browser test cannot launch:** rerun `./scripts/test-all.sh`; it installs the pinned Playwright browser and does not skip a missing browser.
-- **Phone can open the UI but uploads fail:** use reachable LAN hostnames in the presigner and MinIO CORS values, then restart Compose.
+- **Phone can open the UI but uploads fail:** use reachable LAN hostnames in the presigner and MinIO CORS values, then restart Compose. Browser hashing has a pinned JavaScript fallback for plain-LAN/insecure contexts, although HTTPS or a trusted tunnel is recommended.
 - **Compose cannot connect in WSL:** enable Docker Desktop WSL integration and confirm `docker info` works inside the distribution.
 - **AI stays pending in a hand-started local JAR:** include `--app.analysis.scheduling-enabled=true` as shown above.

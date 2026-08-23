@@ -79,7 +79,7 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 | Item | Type | Validation | Due |
 |---|---|---|---|
 | One Spring Boot instance is enough for the demo | Assumption | Test expected concurrency | Before deployment |
-| File-count and file-size limits are unknown | Evidence gap | Approve limits and test boundaries | Before upload API |
+| Upload limits | Resolved | One policy, exposed by `/capabilities`; defaults 10 files, 50 MiB each, 200 MiB total | Implemented |
 | All authenticated users may create projects | Working assumption | Confirm with mentor | Before project API |
 | Project creator may rename; no deletion | Working assumption | Confirm with mentor | Before project API |
 | AI is generated once and not editable | Working assumption | Confirm AI lifecycle | Before AI work |
@@ -292,7 +292,7 @@ erDiagram
     }
 ```
 
-Key invariants are unique `(material_id, version_number)`, unique `(version_id, file_id)`, unique S3 keys, immutable versions/files, and transactional current-version updates. `VERSION_FILES` allows unchanged files to be reused across versions without duplicating S3 bytes.
+Key invariants are unique `(material_id, version_number)`, unique `(version_id, file_id)`, unique S3 keys, immutable versions/files, and transactional current-version updates. A deferred composite foreign key `(materials.id, current_version_id) -> material_versions(material_id, id)` proves the current version belongs to that material while allowing Material and v1 insertion in one transaction. `VERSION_FILES` allows unchanged files to be reused without duplicating S3 bytes.
 
 ## 9. Direct File Upload
 
@@ -365,6 +365,7 @@ Core `/api/v1` endpoints:
 | Method/path | Purpose | Access |
 |---|---|---|
 | `POST /auth/login` | Start session | Public |
+| `GET /capabilities` | Active upload count/size/total limits | Authenticated |
 | `GET/POST /projects` | List/create projects | Authenticated |
 | `GET /projects/{id}/materials` | Current search and filters | Authenticated |
 | `POST /uploads/intents` | Create upload URLs | Authenticated |
@@ -398,7 +399,7 @@ Structured logs and Actuator metrics track request IDs, users, materials, versio
 
 ## 14. Testing and Rollout
 
-Unit tests cover type invariants, authorization, snapshots, search-document construction, and AI state transitions. PostgreSQL integration tests cover atomic v1 creation, immutable N+1 creation, concurrent conflict, permissions, current-only search, and idempotency. S3 adapter tests cover pre-signing, object verification, partial upload, and cleanup. End-to-end tests cover login, TEXT/FILE creation, multi-file mobile upload, current/history layouts, owner/non-owner permissions, download, search, AI completion, and AI failure.
+Unit tests cover type invariants, strict request unions, framework error envelopes, upload-policy alignment, session fixation/cookies, authorization, snapshots, and AI state transitions. PostgreSQL/schema tests cover atomic v1 creation, the deferred current-version ownership FK, immutable N+1 creation, conflicts, permissions, current-only search, and idempotency. The packaged Playwright journey runs the same login, TEXT/FILE creation, multi-file upload, history, download, search, AI, and authorization flow in Desktop Chrome and emulated Pixel 7; a real-device picker remains manual.
 
 Rollout phases:
 

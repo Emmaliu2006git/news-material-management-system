@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiRequest, putFile, resetCsrfForTests } from './client'
+import { apiRequest, putFile, resetCsrfForTests, sha256 } from './client'
 import type { UploadIntent } from './types'
 
 describe('same-origin API client', () => {
@@ -45,6 +45,23 @@ describe('same-origin API client', () => {
       message: 'The material has a newer version',
       requestId: 'request-7',
     }))
+  })
+})
+
+describe('browser checksum', () => {
+  it('calculates SHA-256 when Web Crypto subtle is unavailable on a plain LAN origin', async () => {
+    const originalCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', { randomUUID: originalCrypto.randomUUID?.bind(originalCrypto) })
+    const file = new File(['image'], 'street.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode('image').buffer,
+    })
+
+    try {
+      await expect(sha256(file)).resolves.toBe('6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d')
+    } finally {
+      vi.stubGlobal('crypto', originalCrypto)
+    }
   })
 })
 

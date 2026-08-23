@@ -123,11 +123,11 @@ class FileVersionHistoryTest {
 
         mvc.perform(post("/api/v1/materials/{id}/versions", materialOne).session(login("alex"))
                         .with(SecurityMockMvcRequestPostProcessors.csrf()).header("Idempotency-Key", "alex-file-v2")
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedCurrentVersion\":1,\"title\":\"No\",\"fileIds\":[\"%s\"],\"uploadIntentIds\":[]}".formatted(fileOne)))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedCurrentVersion\":1,\"title\":\"No\",\"files\":[{\"kind\":\"EXISTING\",\"fileId\":\"%s\",\"uploadIntentId\":null}]}".formatted(fileOne)))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
         mvc.perform(post("/api/v1/materials/{id}/versions", materialTwo).session(emma)
                         .with(SecurityMockMvcRequestPostProcessors.csrf()).header("Idempotency-Key", "cross-material")
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedCurrentVersion\":1,\"title\":\"No\",\"fileIds\":[\"%s\"],\"uploadIntentIds\":[]}".formatted(fileOne)))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedCurrentVersion\":1,\"title\":\"No\",\"files\":[{\"kind\":\"EXISTING\",\"fileId\":\"%s\",\"uploadIntentId\":null}]}".formatted(fileOne)))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("INVALID_FILE_SET"));
     }
 

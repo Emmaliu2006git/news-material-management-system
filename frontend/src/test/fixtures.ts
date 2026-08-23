@@ -128,6 +128,17 @@ export function empty(status = 204) {
   return Promise.resolve(new Response(null, { status }))
 }
 
+function versionSummary(material: Material) {
+  return {
+    id: material.version.id,
+    versionNumber: material.version.versionNumber,
+    createdBy: material.version.createdBy,
+    creatorUsername: material.version.creatorUsername,
+    versionCreatedTime: material.version.versionCreatedTime,
+    title: material.version.snapshot.title,
+  }
+}
+
 export function installApi(options?: {
   me?: typeof user | null
   material?: typeof textMaterial | typeof fileMaterial
@@ -137,6 +148,7 @@ export function installApi(options?: {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input)
     if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+    if (url.endsWith('/capabilities')) return json({ upload: { maxFiles: 10, maxFileBytes: 52428800, maxTotalBytes: 209715200 } })
     if (url.endsWith('/auth/me')) {
       return options?.me === null
         ? json({ code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required', requestId: 'req', details: [] }, 401)
@@ -144,10 +156,10 @@ export function installApi(options?: {
     }
     if (url.endsWith('/projects') && (!init?.method || init.method === 'GET')) return json([project])
     if (url.includes('/projects/project-flood/materials')) return json(options?.search ?? [])
-    if (url.endsWith('/materials/material-text/versions')) return json([historicalTextMaterial.version, textMaterial.version])
+    if (url.endsWith('/materials/material-text/versions')) return json([versionSummary(historicalTextMaterial), versionSummary(textMaterial)])
     if (url.endsWith('/materials/material-text/versions/1')) return json(options?.historical ?? historicalTextMaterial)
     if (url.endsWith('/materials/material-text')) return json(options?.material ?? textMaterial)
-    if (url.endsWith('/materials/material-file/versions')) return json([fileMaterial.version])
+    if (url.endsWith('/materials/material-file/versions')) return json([versionSummary(fileMaterial)])
     if (url.endsWith('/materials/material-file')) return json(options?.material ?? fileMaterial)
     return json({ code: 'NOT_FOUND', message: 'No test route', requestId: 'req', details: [] }, 404)
   })

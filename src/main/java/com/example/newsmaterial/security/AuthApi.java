@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -30,10 +31,13 @@ import java.util.UUID;
 public class AuthApi {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository sessions;
+    private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
 
-    public AuthApi(AuthenticationManager authenticationManager, SecurityContextRepository sessions) {
+    public AuthApi(AuthenticationManager authenticationManager, SecurityContextRepository sessions,
+                   SessionAuthenticationStrategy sessionAuthenticationStrategy) {
         this.authenticationManager = authenticationManager;
         this.sessions = sessions;
+        this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
     }
 
     @PostMapping("/login")
@@ -42,6 +46,7 @@ public class AuthApi {
         try {
             Authentication authentication = authenticationManager.authenticate(
                     UsernamePasswordAuthenticationToken.unauthenticated(body.username(), body.password()));
+            sessionAuthenticationStrategy.onAuthentication(authentication, request, response);
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
             SecurityContextHolder.setContext(context);

@@ -24,17 +24,52 @@ public class MaterialApi {
     @PostMapping("/text") ResponseEntity<MaterialView> createText(@AuthenticationPrincipal AuthenticatedUser user, @RequestHeader("Idempotency-Key") @NotBlank String key, @Valid @RequestBody TextMaterialRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(materials.createText(user.id(), key, request)); }
     @PostMapping("/file") ResponseEntity<MaterialView> createFile(@AuthenticationPrincipal AuthenticatedUser user, @RequestHeader("Idempotency-Key") @NotBlank String key, @Valid @RequestBody FileMaterialRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(materials.createFile(user.id(), key, request)); }
     @GetMapping("/{id}") MaterialView current(@PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUser user) { return materials.current(id, user.id()); }
-    @GetMapping("/{id}/versions") List<VersionView> history(@PathVariable UUID id) { return materials.history(id); }
+    @GetMapping("/{id}/versions") List<VersionSummaryView> history(@PathVariable UUID id) { return materials.history(id); }
     @GetMapping("/{id}/versions/{number}") MaterialView historical(@PathVariable UUID id, @PathVariable int number, @AuthenticationPrincipal AuthenticatedUser user) { return materials.historical(id, number, user.id()); }
     @PostMapping("/{id}/versions") ResponseEntity<MaterialView> createVersion(@PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUser user, @RequestHeader("Idempotency-Key") @NotBlank String key, @Valid @RequestBody MaterialVersionRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(materials.createVersion(id, user.id(), key, request)); }
+    public record TextVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, @NotBlank String textBody) {}
 
     public record TextMaterialRequest(@NotNull UUID projectId, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, @NotBlank String textBody) {}
     public record FileMaterialRequest(@NotNull UUID projectId, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textContent, List<UUID> uploadIntentIds) {}
-    public record TextVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, @NotBlank String textBody) {}
     public enum FileSelectionKind { EXISTING, UPLOAD }
     public record FileSelectionRequest(FileSelectionKind kind, UUID fileId, UUID uploadIntentId) {}
-    public record MaterialVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textBody, String textContent, List<UUID> fileIds, List<UUID> uploadIntentIds, List<FileSelectionRequest> files) {}
+
+    public static final class MaterialVersionRequest {
+        @NotNull private Integer expectedCurrentVersion;
+        @NotBlank private String title;
+        private Instant eventTime;
+        private String location;
+        private List<String> manualTags;
+        private String textBody;
+        private String textContent;
+        private List<FileSelectionRequest> files;
+        private boolean textBodyProvided;
+        private boolean textContentProvided;
+        private boolean filesProvided;
+
+        public Integer expectedCurrentVersion() { return expectedCurrentVersion; }
+        public void setExpectedCurrentVersion(Integer value) { this.expectedCurrentVersion = value; }
+        public String title() { return title; }
+        public void setTitle(String value) { this.title = value; }
+        public Instant eventTime() { return eventTime; }
+        public void setEventTime(Instant value) { this.eventTime = value; }
+        public String location() { return location; }
+        public void setLocation(String value) { this.location = value; }
+        public List<String> manualTags() { return manualTags; }
+        public void setManualTags(List<String> value) { this.manualTags = value; }
+        public String textBody() { return textBody; }
+        public void setTextBody(String value) { this.textBody = value; this.textBodyProvided = true; }
+        public String textContent() { return textContent; }
+        public void setTextContent(String value) { this.textContent = value; this.textContentProvided = true; }
+        public List<FileSelectionRequest> files() { return files; }
+        public void setFiles(List<FileSelectionRequest> value) { this.files = value; this.filesProvided = true; }
+        public boolean textBodyProvided() { return textBodyProvided; }
+        public boolean textContentProvided() { return textContentProvided; }
+        public boolean filesProvided() { return filesProvided; }
+    }
+
     public record MaterialView(UUID id, UUID projectId, String projectTitle, UUID ownerId, String ownerUsername, MaterialType type, Instant materialCreatedTime, UUID currentVersionId, boolean canEdit, boolean historical, VersionView version) {}
+    public record VersionSummaryView(UUID id, int versionNumber, UUID createdBy, String creatorUsername, Instant versionCreatedTime, String title) {}
     public record VersionView(UUID id, int versionNumber, UUID createdBy, String creatorUsername, Instant versionCreatedTime, VersionSnapshotView snapshot) {}
     public record VersionSnapshotView(String title, Instant eventTime, String location, List<String> manualTags, VersionContentView content) {}
     public sealed interface VersionContentView permits TextVersionContentView, FileVersionContentView {}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { FileAsset, FileSelection, Material, VersionInput } from '../api/types'
+import type { FileAsset, FileSelection, Material, UploadPolicy, VersionInput } from '../api/types'
 import { PageState } from '../components/Layout'
 import {
   createUploadSession,
@@ -13,6 +13,7 @@ import {
   tags,
   uploadPendingFiles,
   uploadSessionIsValid,
+  validateFilePolicy,
 } from './formUtils'
 import type { UploadProgress, UploadSession } from './formUtils'
 
@@ -32,6 +33,7 @@ export function VersionEditorPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const [material, setMaterial] = useState<Material | null>(null)
+  const [uploadPolicy, setUploadPolicy] = useState<UploadPolicy | null>(null)
   const [orderedFiles, setOrderedFiles] = useState<OrderedFile[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -40,9 +42,10 @@ export function VersionEditorPage() {
   const submission = useRef<SubmissionAttempt | null>(null)
 
   useEffect(() => {
-    api.material(id)
-      .then((loaded) => {
+    Promise.all([api.material(id), api.capabilities()])
+      .then(([loaded, capabilities]) => {
         setMaterial(loaded)
+        setUploadPolicy(capabilities.upload)
         if (loaded.version.snapshot.content.kind === 'FILE') {
           setOrderedFiles(loaded.version.snapshot.content.files.map((asset) => ({
             key: asset.id,
@@ -75,10 +78,19 @@ export function VersionEditorPage() {
 
   function addFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.currentTarget.files ?? [])
-    if (orderedFiles.length + selected.length > 10) {
-      setError('A version can contain no more than 10 files.')
+    if (!uploadPolicy) {
+      setError('Upload limits are unavailable. Reload the page.')
       return
     }
+    const allFiles = [...orderedFiles.map((item) => item.kind === 'EXISTING'
+      ? { name: item.asset.originalFilename, size: item.asset.sizeBytes }
+      : { name: item.file.name, size: item.file.size }), ...selected]
+    const policyError = validateFilePolicy(allFiles, uploadPolicy)
+    if (policyError) {
+      setError(policyError)
+      return
+    }
+    setError('')
     uploadSession.current = null
     submission.current = null
     setOrderedFiles((current) => [
@@ -99,6 +111,20 @@ export function VersionEditorPage() {
     if (material.type === 'FILE' && orderedFiles.length === 0) {
       setError('A file version must keep or add at least one file.')
       return
+    }
+    if (material.type === 'FILE') {
+      if (!uploadPolicy) {
+        setError('Upload limits are unavailable. Reload the page.')
+        return
+      }
+      const allFiles = orderedFiles.map((item) => item.kind === 'EXISTING'
+        ? { name: item.asset.originalFilename, size: item.asset.sizeBytes }
+        : { name: item.file.name, size: item.file.size })
+      const policyError = validateFilePolicy(allFiles, uploadPolicy)
+      if (policyError) {
+        setError(policyError)
+        return
+      }
     }
     setSubmitting(true)
     const data = new FormData(event.currentTarget)
@@ -210,7 +236,7 @@ export function VersionEditorPage() {
             <>
               <label className="form-grid__wide"><span>Material notes <small>optional</small></span><textarea name="textContent" rows={5} defaultValue={content.textContent ?? ''} /></label>
               <section className="form-grid__wide ordered-files" aria-labelledby="ordered-files-heading">
-                <div className="section-heading"><h2 id="ordered-files-heading">Files in this version</h2><span>{orderedFiles.length}/10</span></div>
+                <div className="section-heading"><h2 id="ordered-files-heading">Files in this version</h2><span>{orderedFiles.length}/{uploadPolicy?.maxFiles ?? '…'}</span></div>
                 <ol>
                   {orderedFiles.map((item, index) => {
                     const name = item.kind === 'EXISTING' ? item.asset.originalFilename : item.file.name

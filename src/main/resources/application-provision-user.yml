@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: provision-user
+  main:
+    web-application-type: none
+app:
+  analysis:
+    scheduling-enabled: false

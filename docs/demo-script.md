@@ -149,7 +149,7 @@ Show the project list and summarize:
 
 ## Mobile viewport checklist
 
-Automated unit coverage stubs the real `(max-width: 559px)` media query and verifies that the compact navigation branch opens and closes. The packaged Playwright journey runs at desktop size. Neither check proves narrow-layout quality, touch behavior, device permissions, or a real mobile file picker. Complete this checklist manually at a narrow viewport such as 390 × 844, then repeat the upload on one supported real phone before a production-style presentation.
+Automated unit coverage verifies compact navigation, and the complete packaged Playwright login/FILE-upload journey runs in both Desktop Chrome and emulated Pixel 7 Chromium. Emulation does not prove device permissions, camera/gallery integration, or a real mobile file picker. Complete this checklist on one supported real phone before a production-style presentation. Prefer HTTPS or a trusted tunnel; a pinned JavaScript SHA-256 fallback also keeps hashing functional for a plain-LAN demo where Web Crypto is unavailable.
 
 - [ ] Login card fits without horizontal scrolling.
 - [ ] Header, logout control, breadcrumbs, and primary actions remain reachable.

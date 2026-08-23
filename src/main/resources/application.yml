@@ -1,4 +1,7 @@
 spring:
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   datasource:
     url: jdbc:postgresql://localhost:5432/news_material
     username: news_material
@@ -9,6 +12,15 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true
+        http-only: true
+        same-site: lax
+
 app:
   storage:
     bucket: ${NEWS_MATERIAL_S3_BUCKET:news-material-private}

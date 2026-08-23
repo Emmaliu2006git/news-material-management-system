@@ -56,6 +56,7 @@ class DockerComposeContractTest {
 
         assertThat(app)
                 .containsEntry("SERVER_PORT", "${SERVER_PORT:-8080}")
+                .containsEntry("SERVER_SERVLET_SESSION_COOKIE_SECURE", "${SERVER_SERVLET_SESSION_COOKIE_SECURE:-false}")
                 .containsEntry("SPRING_DATASOURCE_URL", "${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/news_material}")
                 .containsEntry("SPRING_DATASOURCE_USERNAME", "${SPRING_DATASOURCE_USERNAME:-news_material}")
                 .containsEntry("SPRING_DATASOURCE_PASSWORD", "${POSTGRES_PASSWORD:-demo-only-postgres}")
@@ -99,7 +100,8 @@ class DockerComposeContractTest {
                 .containsEntry("NEWS_MATERIAL_S3_BUCKET", "${NEWS_MATERIAL_S3_BUCKET:-news-material-private}");
         assertThat(exampleKeys()).containsExactlyInAnyOrder(
                 "POSTGRES_PASSWORD", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD",
-                "MINIO_API_CORS_ALLOW_ORIGIN", "SERVER_PORT", "SPRING_DATASOURCE_URL",
+                "MINIO_API_CORS_ALLOW_ORIGIN", "SERVER_PORT",
+                "SERVER_SERVLET_SESSION_COOKIE_SECURE", "SPRING_DATASOURCE_URL",
                 "SPRING_DATASOURCE_USERNAME", "NEWS_MATERIAL_S3_BUCKET", "AWS_REGION",
                 "NEWS_MATERIAL_S3_ENDPOINT", "NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT",
                 "NEWS_MATERIAL_S3_PATH_STYLE", "NEWS_MATERIAL_AI_PROVIDER", "OPENAI_API_KEY",

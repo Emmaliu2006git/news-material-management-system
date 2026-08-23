@@ -17,6 +17,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'mobile-chromium',
+      use: { ...devices['Pixel 7'] },
+    },
   ],
   webServer: {
     command: 'java -jar ../target/news-material-management-system-0.0.1-SNAPSHOT.jar --spring.profiles.active=local,e2e --server.port=4173 --app.storage.local-root=../target/e2e-storage',

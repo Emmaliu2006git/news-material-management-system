@@ -97,6 +97,7 @@ These variables/properties are read by Spring Boot when running the JAR/containe
 | --- | --- | --- | --- |
 | `SPRING_PROFILES_ACTIVE` | none | Explicit for local/demo | Select runtime mode |
 | `SERVER_PORT` | `8080` | Optional | HTTP port |
+| `SERVER_SERVLET_SESSION_COOKIE_SECURE` | `true`; Compose demo overrides `false` | HTTP-only demo | Keep `true` behind HTTPS |
 | `SPRING_DATASOURCE_URL` | PostgreSQL on localhost | Cloud/direct | JDBC URL |
 | `SPRING_DATASOURCE_USERNAME` | `news_material` | Cloud/direct | Database identity |
 | `SPRING_DATASOURCE_PASSWORD` | `news_material` | Cloud/direct | Secret; use secret manager |
@@ -122,7 +123,7 @@ These variables/properties are read by Spring Boot when running the JAR/containe
 | `APP_UPLOAD_MAX_TOTAL_BYTES` | `209715200` | Optional | 200 MiB per snapshot |
 | `APP_UPLOAD_INTENT_TTL` | `PT15M` | Optional | Presign/intent lifetime |
 
-For TLS deployments also set `SERVER_SERVLET_SESSION_COOKIE_SECURE=true` and an organization-approved `SERVER_SERVLET_SESSION_COOKIE_SAME_SITE` value. Terminate HTTPS only at a trusted proxy and preserve secure-cookie behavior.
+Base/cloud defaults are `Secure=true`, `HttpOnly=true`, and `SameSite=Lax`, with framework forwarded-header handling. The `local` profile and included HTTP Compose demo explicitly set `Secure=false`; those overrides are for loopback/LAN demonstration only. Terminate HTTPS at a trusted proxy, pass standard forwarded headers, and leave the secure default enabled in shared deployments.
 
 ## PostgreSQL and Flyway
 
@@ -134,6 +135,7 @@ Migration order is fixed and contiguous:
 2. `V2__materials_and_versions.sql` — stable materials, immutable snapshots, tags, idempotency.
 3. `V3__uploads_and_files.sql` — upload intents, FileAssets, ordered version files.
 4. `V4__search_and_analysis.sql` — `pg_trgm`, image analysis, current-version search documents and indexes.
+5. `V5__enforce_material_current_version_ownership.sql` — composite unique/FK proving `current_version_id` belongs to the same Material; the FK is deferred so Material and v1 can be inserted atomically.
 
 Before the first application startup, an administrator should enable the extension if the application role cannot:
 
@@ -153,13 +155,31 @@ FROM flyway_schema_history
 ORDER BY installed_rank;
 ```
 
-Expected: one `pg_trgm` row and successful Flyway rows 1 through 4. Never edit an applied migration; add a new forward migration.
+Expected: one `pg_trgm` row and successful Flyway rows 1 through 5. Never edit an applied migration; add a new forward migration.
 
 Recommended role separation:
 
 - Migration identity: schema DDL plus access to create/use the approved extension.
 - Runtime identity: DML on application tables/sequences only.
 - If one identity is used for this demo, reduce it before production.
+
+## One-time cloud account provisioning
+
+Cloud/base mode seeds no users and the application exposes no registration, roles, or administrator endpoint. Build the JAR, configure the normal cloud PostgreSQL connection, then run the non-web `provision-user` profile once:
+
+```bash
+read -rp 'Username: ' NEWS_MATERIAL_PROVISION_USERNAME
+read -rsp 'Password: ' NEWS_MATERIAL_PROVISION_PASSWORD
+printf '\n'
+export NEWS_MATERIAL_PROVISION_USERNAME NEWS_MATERIAL_PROVISION_PASSWORD
+java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=provision-user
+unset NEWS_MATERIAL_PROVISION_USERNAME NEWS_MATERIAL_PROVISION_PASSWORD
+```
+
+The password must contain at least 12 characters. The procedure BCrypt-hashes it, inserts the account idempotently, prints only username/outcome, clears its mutable password buffer, closes the application, and never starts a public HTTP server. Re-running the same username reports `ALREADY_EXISTS` and does not change the password.
+
+Prefer an interactive secret injection mechanism. The password environment variable supports non-interactive deployment tooling but must come from a secret manager and must never be placed in shell history, Compose files, logs, or source control. If an interactive console is available, omit `NEWS_MATERIAL_PROVISION_PASSWORD`; the runner prompts without echo. Remove both variables from the environment after completion. Account deletion, reset, roles, and self-registration remain out of scope.
 
 ## Private S3 or MinIO
 
@@ -301,10 +321,11 @@ Flyway migrations are forward-only. Do not run an older binary against a schema 
 | Flyway fails at V4 | Confirm managed PostgreSQL permits/preinstalls `pg_trgm` |
 | Upload URL works on laptop but not phone | Replace browser-facing localhost with a reachable LAN/TLS endpoint and update CORS |
 | Upload finalization returns 422 | Check intent ownership/expiry, exact byte count, MIME header, and SHA-256 header |
-| Upload returns 413 | Respect 10 files, 50 MiB each, and 200 MiB total |
+| Upload returns 413 | Read `/api/v1/capabilities`; respect the configured count, per-file, and total limits |
 | AI remains PENDING locally | Start with `--app.analysis.scheduling-enabled=true` |
 | AI becomes FAILED | Inspect provider reachability/timeouts without logging content; owner may retry |
 | Search misses old wording | Expected: historical versions are excluded |
+| Flyway fails at V5 | Confirm existing `current_version_id` values point to a version owned by the same material; repair data explicitly before retrying |
 | Non-owner cannot see edit/retry | Expected owner-only action; all signed-in users still view/download |
 | Browser test cannot launch | Run the full script so the pinned Playwright browser is installed |
 | Compose unavailable in WSL | Enable Docker Desktop WSL integration and verify `docker info` inside the distribution |
@@ -312,7 +333,7 @@ Flyway migrations are forward-only. Do not run an older binary against a schema 
 ## Known non-production limitations
 
 - PostgreSQL, MinIO/S3, Docker Compose, and OpenAI were contract-tested but not live-started in the implementation environment.
-- Real-device mobile upload remains a manual acceptance check.
+- Desktop Chromium and emulated Pixel 7 run the packaged login/FILE-upload journey automatically. A real-device picker, permissions, camera/gallery integration, and LAN routing remain manual.
 - No malware scanning; do not accept untrusted public uploads.
 - No orphan cleanup worker, retention administration, or delete endpoint.
 - No rate limiting, account administration, password reset, SSO, audit-event export, or custom observability.
@@ -322,3 +343,7 @@ Flyway migrations are forward-only. Do not run an older binary against a schema 
 - Search is keyword/filter search over current versions, not semantic/vector search.
 - No Java CVE database scanner is configured; run an organization-approved scanner against the resolved Maven runtime graph and container image before release.
 - No teams, roles, Kafka, native app, notifications, collaborative branches/merges, lineage after re-upload, or media editor.
+
+### Mobile/LAN note
+
+The browser checksum path first uses Web Crypto and falls back to pinned `@noble/hashes` SHA-256 when `crypto.subtle` is absent or unusable on an insecure LAN origin. This makes plain-LAN demos functional; HTTPS or a trusted tunnel is still recommended for secure sessions and real reporting data. Configure browser-reachable presigned endpoints and exact CORS origins either way.

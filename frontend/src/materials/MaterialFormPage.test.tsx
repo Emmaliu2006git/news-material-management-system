@@ -13,6 +13,9 @@ function baseRoute(input: RequestInfo | URL) {
   const url = String(input)
   if (url.endsWith('/auth/me')) return json(user)
   if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+  if (url.endsWith('/capabilities')) {
+    return json({ upload: { maxFiles: 10, maxFileBytes: 52428800, maxTotalBytes: 209715200 } })
+  }
   if (url.endsWith('/projects')) return json([project])
   return null
 }
@@ -114,6 +117,29 @@ describe('new material', () => {
     expect(await screen.findByRole('heading', { name: 'River level update' })).toBeInTheDocument()
     expect(attempts).toHaveLength(2)
     expect(attempts[1]).toEqual(attempts[0])
+  })
+
+  it('uses server capabilities for file count and aggregate-size validation', async () => {
+    const api = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (String(input).endsWith('/capabilities')) {
+        return json({ upload: { maxFiles: 2, maxFileBytes: 5, maxTotalBytes: 6 } })
+      }
+      return baseRoute(input) ?? json({}, 404)
+    })
+    const actor = userEvent.setup({ applyAccept: false })
+    renderRoute('/projects/project-flood/new')
+
+    await actor.click(await screen.findByRole('radio', { name: /file material/i }))
+    await actor.upload(screen.getByLabelText(/^files/i), [
+      uploadedFile('one.jpg'), uploadedFile('two.jpg'), uploadedFile('three.jpg'),
+    ])
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no more than 2 files/i)
+
+    await actor.upload(screen.getByLabelText(/^files/i), [
+      uploadedFile('one.jpg'), uploadedFile('two.jpg'),
+    ])
+    expect(await screen.findByRole('alert')).toHaveTextContent(/total.*6 bytes/i)
+    expect(api.mock.calls.some(([url]) => String(url).endsWith('/uploads/intents'))).toBe(false)
   })
 
   it('rejects more than ten files before requesting upload intents', async () => {
@@ -392,6 +418,26 @@ describe('owner version editor', () => {
   beforeEach(() => {
     vi.stubGlobal('XMLHttpRequest', AutoUploadRequest)
     vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(new Uint8Array(32).buffer)
+  })
+
+  it('uses server capabilities when retained files already consume the version limit', async () => {
+    const api = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input)
+      if (url.endsWith('/capabilities')) {
+        return json({ upload: { maxFiles: 2, maxFileBytes: 52428800, maxTotalBytes: 209715200 } })
+      }
+      const base = baseRoute(input)
+      if (base) return base
+      if (url.endsWith('/materials/material-file') && (!init?.method || init.method === 'GET')) return json(fileMaterial)
+      return json({}, 404)
+    })
+    const actor = userEvent.setup({ applyAccept: false })
+    renderRoute('/materials/material-file/edit')
+
+    await screen.findByDisplayValue('Street evidence')
+    await actor.upload(screen.getByLabelText(/add files/i), uploadedFile('too-many.jpg'))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no more than 2 files/i)
+    expect(api.mock.calls.some(([url]) => String(url).endsWith('/uploads/intents'))).toBe(false)
   })
 
   it('prefills the FILE snapshot and sends ordered discriminated selections', async () => {

@@ -6,13 +6,23 @@ const onePixelPng = Buffer.from(
   'base64',
 )
 
+function usesMobileNavigation(page: Page) {
+  return (page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 559
+}
+
 async function login(page: Page, username: string) {
   await page.goto('/login')
   await page.getByLabel('Username').fill(username)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/projects$/)
+  if (usesMobileNavigation(page)) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
   await expect(page.getByTitle('Signed-in user')).toHaveText(username)
+  if (usesMobileNavigation(page)) {
+    await page.getByRole('button', { name: 'Close navigation' }).click()
+  }
 }
 
 test('packaged newsroom happy path preserves history, files, AI isolation, and ownership', async ({ page }) => {
@@ -110,6 +120,9 @@ test('packaged newsroom happy path preserves history, files, AI isolation, and o
   await expect(page.getByRole('link', { name: fileTitle })).toBeVisible()
   await expect(page.getByText('Matched an AI-analyzed image')).toBeVisible()
 
+  if (usesMobileNavigation(page)) {
+    await page.getByRole('button', { name: 'Open navigation' }).click()
+  }
   await page.getByRole('button', { name: 'Log out' }).click()
   await expect(page).toHaveURL(/\/login$/)
   await login(page, 'alex')
