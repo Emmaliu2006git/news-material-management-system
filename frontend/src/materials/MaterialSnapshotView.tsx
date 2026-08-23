@@ -70,8 +70,11 @@ function FileCard({
         {matched && <span className="match-pill">Search match</span>}
       </div>
       <dl className="compact-meta">
+        <div><dt>File ID</dt><dd>{file.id}</dd></div>
+        <div><dt>Uploader</dt><dd>{file.uploaderUsername}</dd></div>
+        <div><dt>MIME type</dt><dd>{file.mimeType}</dd></div>
+        <div><dt>File size</dt><dd>{bytes(file.sizeBytes)}</dd></div>
         <div><dt>Uploaded</dt><dd>{dateTime(file.fileCreatedTime)}</dd></div>
-        <div><dt>Checksum</dt><dd title={file.checksumSha256}>{file.checksumSha256.slice(0, 12)}…</dd></div>
       </dl>
       {file.imageAnalysis && (
         <section className="analysis-panel" aria-label="AI analysis">
@@ -81,6 +84,11 @@ function FileCard({
           </div>
           {file.imageAnalysis.aiDescription && <p>{file.imageAnalysis.aiDescription}</p>}
           <TagList tags={file.imageAnalysis.aiTags} kind="ai" />
+          {file.imageAnalysis.generatedTime && (
+            <p className="analysis-generated">
+              Generated {dateTime(file.imageAnalysis.generatedTime)}
+            </p>
+          )}
           {canEdit && analysisStatus === 'FAILED' && (
             <button className="button button--small" type="button" onClick={retry}>Retry AI analysis</button>
           )}
@@ -114,10 +122,16 @@ export function MaterialSnapshotView({
         <div className="version-chip">Version {material.version.versionNumber}</div>
       </header>
       <dl className="metadata-grid">
-        <div><dt>Owner</dt><dd>{material.ownerId}</dd></div>
+        <div><dt>Material ID</dt><dd>{material.id}</dd></div>
+        <div><dt>Reporting project</dt><dd>{material.projectTitle}</dd></div>
+        <div><dt>Project ID</dt><dd>{material.projectId}</dd></div>
+        <div><dt>Owner</dt><dd>{material.ownerUsername}</dd></div>
         <div><dt>Material created</dt><dd>{dateTime(material.materialCreatedTime)}</dd></div>
-        <div><dt>Version created</dt><dd>{dateTime(material.version.versionCreatedTime)}</dd></div>
         <div><dt>Material type</dt><dd>{content.kind === 'TEXT' ? 'Text' : 'File'}</dd></div>
+        <div><dt>Version ID</dt><dd>{material.version.id}</dd></div>
+        <div><dt>Version number</dt><dd>{material.version.versionNumber}</dd></div>
+        <div><dt>Version creator</dt><dd>{material.version.creatorUsername}</dd></div>
+        <div><dt>Version created</dt><dd>{dateTime(material.version.versionCreatedTime)}</dd></div>
         {snapshot.eventTime && <div><dt>Event time</dt><dd>{dateTime(snapshot.eventTime)}</dd></div>}
         {snapshot.location && <div><dt>Location</dt><dd>{snapshot.location}</dd></div>}
       </dl>

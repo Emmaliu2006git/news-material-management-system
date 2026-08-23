@@ -70,6 +70,7 @@ h3 { margin-bottom: .3rem; font-size: 1rem; }
 }
 .primary-nav { display: flex; align-items: center; gap: .65rem; }
 .primary-nav > a { display: none; font-weight: 600; text-decoration: none; }
+.site-message { width: min(calc(100% - 2rem), 1120px); margin-right: auto; margin-left: auto; }
 .user-chip {
   max-width: 8rem;
   overflow: hidden;
@@ -291,6 +292,20 @@ progress { width: 100%; accent-color: var(--brand); }
 .version-timeline span, .version-timeline time { color: var(--muted); font-size: .72rem; }
 .version-timeline__current a { border-left: 3px solid var(--brand); background: #edf4ee; }
 
+@media (max-width: 559px) {
+  .primary-nav {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding: .8rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .primary-nav > a { display: inline; }
+}
 @media (min-width: 560px) {
   .primary-nav > a { display: inline; }
   .page-shell { padding-right: 1.5rem; padding-left: 1.5rem; }
@@ -306,7 +321,8 @@ progress { width: 100%; accent-color: var(--brand); }
 }
 @media (min-width: 820px) {
   .page-shell { padding-top: 2rem; }
-  .search-panel { grid-template-columns: minmax(14rem, 2fr) repeat(3, minmax(8rem, 1fr)) auto; align-items: end; }
+  .search-panel { grid-template-columns: repeat(4, minmax(8rem, 1fr)); align-items: end; }
+  .search-panel__query { grid-column: span 2; }
   .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .material-layout { grid-template-columns: minmax(0, 1fr) 240px; align-items: start; }
   .version-panel { position: sticky; top: 5.5rem; }

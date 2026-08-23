@@ -49,6 +49,7 @@ class FileMaterialApiTest {
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.kind")).isEqualTo("FILE");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.textContent")).isEqualTo("Reporter context");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[0].originalFilename")).isEqualTo("note.txt");
+        assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[0].uploaderUsername")).isEqualTo("emma");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].originalFilename")).isEqualTo("photo.jpg");
         assertThat(JsonPath.<String>read(body, "$.version.snapshot.content.files[1].imageAnalysis.status")).isEqualTo("PENDING");
         assertThat(JsonPath.<java.util.Map<String, Object>>read(body, "$.version.snapshot.content.files[0]")).doesNotContainKey("objectKey");

@@ -93,6 +93,7 @@ class SearchApiTest {
                 .andExpect(status().isOk()).andReturn();
         List<String> filteredIds = JsonPath.read(filtered.getResponse().getContentAsString(), "$[*].id");
         assertThat(filteredIds).containsExactly(firstMaterialId);
+        assertThat(JsonPath.<String>read(filtered.getResponse().getContentAsString(), "$[0].ownerUsername")).isEqualTo("emma");
     }
 
     @Test

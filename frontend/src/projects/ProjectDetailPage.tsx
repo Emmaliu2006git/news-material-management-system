@@ -5,10 +5,17 @@ import { api, ApiError } from '../api/client'
 import type { Project, SearchFilters, SearchResult } from '../api/types'
 import { PageState, TagList } from '../components/Layout'
 
+function dateBoundary(value: FormDataEntryValue | null, endOfDay = false) {
+  const date = String(value ?? '')
+  if (!date) return undefined
+  return new Date(`${date}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`).toISOString()
+}
+
 export function ProjectDetailPage() {
   const { id = '' } = useParams()
   const [project, setProject] = useState<Project | null>(null)
   const [results, setResults] = useState<SearchResult[]>([])
+  const [initialResults, setInitialResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -26,6 +33,7 @@ export function ProjectDetailPage() {
       .then(([projects, materials]) => {
         setProject(projects.find((item) => item.id === id) ?? null)
         setResults(materials)
+        setInitialResults(materials)
       })
       .catch((caught) => setError(caught instanceof ApiError ? caught.message : 'The project could not be loaded.'))
       .finally(() => setLoading(false))
@@ -37,10 +45,19 @@ export function ProjectDetailPage() {
     await search({
       q: String(data.get('q') ?? ''),
       materialType: (String(data.get('materialType') ?? '') || undefined) as SearchFilters['materialType'],
+      ownerId: String(data.get('ownerId') ?? ''),
+      createdFrom: dateBoundary(data.get('createdFrom')),
+      createdTo: dateBoundary(data.get('createdTo'), true),
+      eventFrom: dateBoundary(data.get('eventFrom')),
+      eventTo: dateBoundary(data.get('eventTo'), true),
       location: String(data.get('location') ?? ''),
       tag: String(data.get('tag') ?? ''),
     })
   }
+
+  const owners = Array.from(new Map(
+    initialResults.map((result) => [result.ownerId, result.ownerUsername]),
+  )).sort((left, right) => left[1].localeCompare(right[1]))
 
   if (loading) return <PageState>Loading project…</PageState>
   if (!project) return <PageState kind="alert">{error || 'Project not found.'}</PageState>
@@ -69,6 +86,29 @@ export function ProjectDetailPage() {
             <option value="TEXT">Text</option>
             <option value="FILE">File</option>
           </select>
+        </label>
+        <label>
+          <span>Owner</span>
+          <select name="ownerId" defaultValue="">
+            <option value="">All owners</option>
+            {owners.map(([ownerId, username]) => <option key={ownerId} value={ownerId}>{username}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Material created from</span>
+          <input name="createdFrom" type="date" />
+        </label>
+        <label>
+          <span>Material created to</span>
+          <input name="createdTo" type="date" />
+        </label>
+        <label>
+          <span>Event time from</span>
+          <input name="eventFrom" type="date" />
+        </label>
+        <label>
+          <span>Event time to</span>
+          <input name="eventTo" type="date" />
         </label>
         <label>
           <span>Location</span>

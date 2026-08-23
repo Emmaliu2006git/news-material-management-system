@@ -45,7 +45,6 @@ async function parseError(response: Response): Promise<ApiError> {
 }
 
 async function ensureCsrf() {
-  if (csrf) return csrf
   const response = await fetch('/api/v1/auth/csrf', { credentials: 'include' })
   if (!response.ok) throw await parseError(response)
   csrf = await response.json()
@@ -135,16 +134,21 @@ export async function sha256(file: File) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export function putFile(
+export async function putFile(
   target: UploadIntent,
   file: File,
   onProgress: (percent: number) => void,
 ): Promise<void> {
+  const targetUrl = new URL(target.uploadUrl, window.location.href)
+  const sameOrigin = targetUrl.origin === window.location.origin
+  const csrfToken = sameOrigin ? await ensureCsrf() : null
+
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open('PUT', target.uploadUrl)
-    request.withCredentials = target.uploadUrl.startsWith('/')
+    request.withCredentials = sameOrigin
     Object.entries(target.requiredHeaders).forEach(([name, value]) => request.setRequestHeader(name, value))
+    if (csrfToken) request.setRequestHeader(csrfToken.headerName, csrfToken.token)
     request.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100))
     })

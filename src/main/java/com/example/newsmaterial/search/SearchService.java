@@ -64,7 +64,7 @@ public class SearchService {
     private SearchResult result(UUID materialId, UUID matchedFileId) {
         Material material = materials.findById(materialId).orElseThrow();
         MaterialVersion version = versions.findById(material.getCurrentVersionId()).orElseThrow();
-        return new SearchResult(material.getId(), material.getProject().getId(), material.getOwner().getId(),
+        return new SearchResult(material.getId(), material.getProject().getId(), material.getOwner().getId(), material.getOwner().getUsername(),
                 material.getType(), material.getMaterialCreatedTime(), material.getCurrentVersionId(),
                 version.getVersionNumber(), version.getTitle(), version.getEventTime(), version.getLocation(),
                 version.getManualTags(), matchedFileId);
@@ -116,7 +116,7 @@ public class SearchService {
                                 String location, String tag) {
     }
 
-    public record SearchResult(UUID id, UUID projectId, UUID ownerId, MaterialType type,
+    public record SearchResult(UUID id, UUID projectId, UUID ownerId, String ownerUsername, MaterialType type,
                                Instant materialCreatedTime, UUID currentVersionId, int currentVersionNumber,
                                String title, Instant eventTime, String location, List<String> manualTags,
                                UUID matchedFileId) {

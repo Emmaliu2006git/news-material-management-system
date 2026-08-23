@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiRequest, putFile } from './client'
+import { apiRequest, putFile, resetCsrfForTests } from './client'
 import type { UploadIntent } from './types'
 
 describe('same-origin API client', () => {
@@ -84,30 +84,62 @@ describe('direct file upload', () => {
     expiresAt: '2026-08-22T16:00:00Z',
   }
 
-  it('uploads directly to the signed target with required headers and reports progress', async () => {
+  beforeEach(() => {
+    resetCsrfForTests()
+    FakeRequest.latest = undefined as unknown as FakeRequest
+  })
+
+  it('attaches the current CSRF token and credentials to a same-origin direct upload', async () => {
     vi.stubGlobal('XMLHttpRequest', FakeRequest)
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      token: 'upload-token',
+      headerName: 'X-XSRF-TOKEN',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     const progress: number[] = []
     const file = new File(['image'], 'street.jpg', { type: 'image/jpeg' })
     const pending = putFile(intent, file, (value) => progress.push(value))
+    await vi.waitFor(() => expect(FakeRequest.latest).toBeDefined())
     const request = FakeRequest.latest
 
     request.upload.dispatchEvent(new ProgressEvent('progress', { lengthComputable: true, loaded: 3, total: 5 }))
     request.dispatchEvent(new Event('load'))
     await pending
 
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/auth/csrf', { credentials: 'include' })
     expect({ method: request.method, url: request.url, body: request.body }).toEqual({
       method: 'PUT',
       url: intent.uploadUrl,
       body: file,
     })
-    expect(Object.fromEntries(request.headers)).toEqual(intent.requiredHeaders)
+    expect(Object.fromEntries(request.headers)).toEqual({
+      ...intent.requiredHeaders,
+      'X-XSRF-TOKEN': 'upload-token',
+    })
     expect(request.withCredentials).toBe(true)
     expect(progress).toEqual([60, 100])
   })
 
+  it('sends only signed required headers to a cross-origin object store', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeRequest)
+    const fetcher = vi.spyOn(globalThis, 'fetch')
+    const crossOrigin = { ...intent, uploadUrl: 'https://bucket.example/uploads/one' }
+    const pending = putFile(crossOrigin, new File(['x'], 'street.jpg'), () => undefined)
+    await vi.waitFor(() => expect(FakeRequest.latest).toBeDefined())
+    FakeRequest.latest.dispatchEvent(new Event('load'))
+    await pending
+    expect(FakeRequest.latest.withCredentials).toBe(false)
+    expect(Object.fromEntries(FakeRequest.latest.headers)).toEqual(intent.requiredHeaders)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('returns a retry-safe error when direct upload is interrupted', async () => {
     vi.stubGlobal('XMLHttpRequest', FakeRequest)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      token: 'upload-token',
+      headerName: 'X-XSRF-TOKEN',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     const pending = putFile(intent, new File(['x'], 'street.jpg'), () => undefined)
+    await vi.waitFor(() => expect(FakeRequest.latest).toBeDefined())
     FakeRequest.latest.dispatchEvent(new Event('error'))
     await expect(pending).rejects.toEqual(expect.objectContaining({
       code: 'UPLOAD_FAILED',

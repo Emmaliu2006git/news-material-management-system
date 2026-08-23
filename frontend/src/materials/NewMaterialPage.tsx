@@ -1,10 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { MaterialType, Project } from '../api/types'
-import { eventTime, idempotencyKey, optional, tags, uploadFiles } from './formUtils'
-import type { UploadProgress } from './formUtils'
+import type { FileMaterialInput, MaterialType, Project, TextMaterialInput } from '../api/types'
+import {
+  createUploadSession,
+  eventTime,
+  idempotencyKey,
+  optional,
+  tags,
+  uploadPendingFiles,
+  uploadSessionIsValid,
+} from './formUtils'
+import type { UploadProgress, UploadSession } from './formUtils'
+
+type SubmissionAttempt = { fingerprint: string; key: string; payload: TextMaterialInput | FileMaterialInput }
 
 export function NewMaterialPage() {
   const { id: projectId = '' } = useParams()
@@ -15,6 +25,8 @@ export function NewMaterialPage() {
   const [progress, setProgress] = useState<UploadProgress[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const uploadSession = useRef<UploadSession | null>(null)
+  const submission = useRef<SubmissionAttempt | null>(null)
 
   useEffect(() => {
     api.listProjects().then((all) => setProject(all.find((item) => item.id === projectId) ?? null)).catch(() => undefined)
@@ -27,8 +39,16 @@ export function NewMaterialPage() {
       return
     }
     setFiles(selected)
+    uploadSession.current = null
+    submission.current = null
     setProgress(selected.map((file) => ({ name: file.name, percent: 0, status: 'hashing' })))
     setError('')
+  }
+
+  function chooseType(next: MaterialType) {
+    setType(next)
+    uploadSession.current = null
+    submission.current = null
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -48,21 +68,41 @@ export function NewMaterialPage() {
       manualTags: tags(data.get('manualTags')),
     }
     try {
-      const created = type === 'TEXT'
-        ? await api.createText({
+      let created
+      if (type === 'TEXT') {
+        const payload: TextMaterialInput = {
           ...common,
           textBody: String(data.get('textBody')).trim(),
-        }, idempotencyKey())
-        : await (async () => {
-          const intents = await uploadFiles(files, (index, next) => {
+        }
+        const fingerprint = JSON.stringify(payload)
+        if (submission.current?.fingerprint !== fingerprint) {
+          submission.current = { fingerprint, key: idempotencyKey(), payload }
+        }
+        const attempt = submission.current
+        created = await api.createText(attempt.payload as TextMaterialInput, attempt.key)
+      } else {
+        let session = uploadSession.current
+        if (!session || !uploadSessionIsValid(session)) {
+          session = await createUploadSession(files, (index, next) => {
             setProgress((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))
           })
-          return api.createFile({
-            ...common,
-            textContent: optional(data.get('textContent')),
-            uploadIntentIds: intents.map((intent) => intent.intentId),
-          }, idempotencyKey())
-        })()
+          uploadSession.current = session
+        }
+        await uploadPendingFiles(files, session, (index, next) => {
+          setProgress((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))
+        })
+        const payload: FileMaterialInput = {
+          ...common,
+          textContent: optional(data.get('textContent')),
+          uploadIntentIds: session.intents.map((intent) => intent.intentId),
+        }
+        const fingerprint = JSON.stringify(payload)
+        if (submission.current?.fingerprint !== fingerprint) {
+          submission.current = { fingerprint, key: idempotencyKey(), payload }
+        }
+        const attempt = submission.current
+        created = await api.createFile(attempt.payload as FileMaterialInput, attempt.key)
+      }
       navigate(`/materials/${created.id}`, { replace: true })
     } catch (caught) {
       setError(caught instanceof ApiError || caught instanceof Error
@@ -88,11 +128,11 @@ export function NewMaterialPage() {
         <fieldset className="type-picker">
           <legend>Material type</legend>
           <label className={type === 'TEXT' ? 'type-option type-option--selected' : 'type-option'}>
-            <input type="radio" name="type" value="TEXT" checked={type === 'TEXT'} onChange={() => setType('TEXT')} />
+            <input type="radio" name="type" value="TEXT" checked={type === 'TEXT'} onChange={() => chooseType('TEXT')} />
             <span><strong>Text material</strong><small>A written field note or report.</small></span>
           </label>
           <label className={type === 'FILE' ? 'type-option type-option--selected' : 'type-option'}>
-            <input type="radio" name="type" value="FILE" checked={type === 'FILE'} onChange={() => setType('FILE')} />
+            <input type="radio" name="type" value="FILE" checked={type === 'FILE'} onChange={() => chooseType('FILE')} />
             <span><strong>File material</strong><small>One to ten photos, videos, audio clips, PDFs, or notes.</small></span>
           </label>
         </fieldset>

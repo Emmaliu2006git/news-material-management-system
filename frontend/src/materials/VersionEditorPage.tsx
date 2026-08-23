@@ -1,11 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { FileAsset, FileSelection, Material } from '../api/types'
+import type { FileAsset, FileSelection, Material, VersionInput } from '../api/types'
 import { PageState } from '../components/Layout'
-import { eventTime, idempotencyKey, optional, tags, uploadFiles } from './formUtils'
-import type { UploadProgress } from './formUtils'
+import {
+  createUploadSession,
+  eventTime,
+  idempotencyKey,
+  optional,
+  tags,
+  uploadPendingFiles,
+  uploadSessionIsValid,
+} from './formUtils'
+import type { UploadProgress, UploadSession } from './formUtils'
+
+type SubmissionAttempt = { fingerprint: string; key: string; payload: VersionInput }
 
 type OrderedFile =
   | { key: string; kind: 'EXISTING'; asset: FileAsset }
@@ -25,6 +35,8 @@ export function VersionEditorPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const uploadSession = useRef<UploadSession | null>(null)
+  const submission = useRef<SubmissionAttempt | null>(null)
 
   useEffect(() => {
     api.material(id)
@@ -43,6 +55,8 @@ export function VersionEditorPage() {
   }, [id])
 
   function move(index: number, direction: -1 | 1) {
+    uploadSession.current = null
+    submission.current = null
     setOrderedFiles((current) => {
       const nextIndex = index + direction
       if (nextIndex < 0 || nextIndex >= current.length) return current
@@ -52,12 +66,20 @@ export function VersionEditorPage() {
     })
   }
 
+  function remove(index: number) {
+    uploadSession.current = null
+    submission.current = null
+    setOrderedFiles((current) => current.filter((_, position) => position !== index))
+  }
+
   function addFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.currentTarget.files ?? [])
     if (orderedFiles.length + selected.length > 10) {
       setError('A version can contain no more than 10 files.')
       return
     }
+    uploadSession.current = null
+    submission.current = null
     setOrderedFiles((current) => [
       ...current,
       ...selected.map((file, index) => ({
@@ -87,24 +109,41 @@ export function VersionEditorPage() {
       manualTags: tags(data.get('manualTags')),
     }
     try {
-      let payload
+      let payload: VersionInput
       if (material.type === 'TEXT') {
         payload = { ...common, textBody: String(data.get('textBody')).trim() }
       } else {
         const fresh = orderedFiles.filter((item): item is Extract<OrderedFile, { kind: 'UPLOAD' }> => item.kind === 'UPLOAD')
-        const intents = fresh.length ? await uploadFiles(fresh.map((item) => item.file), (index, progress) => {
+        let session = uploadSession.current
+        if (!session || !uploadSessionIsValid(session)) {
+          session = fresh.length
+            ? await createUploadSession(fresh.map((item) => item.file), (index, progress) => {
+              const key = fresh[index].key
+              setOrderedFiles((current) => current.map((item) =>
+                item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
+              ))
+            })
+            : { intents: [], uploaded: new Set() }
+          uploadSession.current = session
+        }
+        await uploadPendingFiles(fresh.map((item) => item.file), session, (index, progress) => {
           const key = fresh[index].key
           setOrderedFiles((current) => current.map((item) =>
             item.key === key && item.kind === 'UPLOAD' ? { ...item, progress } : item,
           ))
-        }) : []
-        const intentIds = new Map(fresh.map((item, index) => [item.key, intents[index].intentId]))
+        })
+        const intentIds = new Map(fresh.map((item, index) => [item.key, session.intents[index].intentId]))
         const files: FileSelection[] = orderedFiles.map((item) => item.kind === 'EXISTING'
           ? { kind: 'EXISTING', fileId: item.asset.id, uploadIntentId: null }
           : { kind: 'UPLOAD', fileId: null, uploadIntentId: intentIds.get(item.key)! })
         payload = { ...common, textContent: optional(data.get('textContent')), files }
       }
-      const created = await api.createVersion(id, payload, idempotencyKey())
+      const fingerprint = JSON.stringify(payload)
+      if (submission.current?.fingerprint !== fingerprint) {
+        submission.current = { fingerprint, key: idempotencyKey(), payload }
+      }
+      const attempt = submission.current
+      const created = await api.createVersion(id, attempt.payload, attempt.key)
       navigate(`/materials/${created.id}`, { replace: true })
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === 'VERSION_CONFLICT') {
@@ -153,7 +192,7 @@ export function VersionEditorPage() {
                         <div className="row-actions">
                           <button type="button" className="icon-button" disabled={index === 0} aria-label={`Move ${name} up`} onClick={() => move(index, -1)}>↑</button>
                           <button type="button" className="icon-button" disabled={index === orderedFiles.length - 1} aria-label={`Move ${name} down`} onClick={() => move(index, 1)}>↓</button>
-                          <button type="button" className="icon-button icon-button--danger" aria-label={`Remove ${name}`} onClick={() => setOrderedFiles((current) => current.filter((_, position) => position !== index))}>×</button>
+                          <button type="button" className="icon-button icon-button--danger" aria-label={`Remove ${name}`} onClick={() => remove(index)}>×</button>
                         </div>
                       </li>
                     )

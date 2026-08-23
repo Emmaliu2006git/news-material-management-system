@@ -15,7 +15,9 @@ export const project = {
 export const textMaterial: Material = {
   id: 'material-text',
   projectId: project.id,
+  projectTitle: project.title,
   ownerId: user.id,
+  ownerUsername: user.username,
   type: 'TEXT',
   materialCreatedTime: '2026-08-22T12:05:00Z',
   currentVersionId: 'version-text-2',
@@ -25,6 +27,7 @@ export const textMaterial: Material = {
     id: 'version-text-2',
     versionNumber: 2,
     createdBy: user.id,
+    creatorUsername: user.username,
     versionCreatedTime: '2026-08-22T13:00:00Z',
     snapshot: {
       title: 'River level update',
@@ -56,7 +59,9 @@ export const historicalTextMaterial: Material = {
 export const fileMaterial: Material = {
   id: 'material-file',
   projectId: project.id,
+  projectTitle: project.title,
   ownerId: user.id,
+  ownerUsername: user.username,
   type: 'FILE',
   materialCreatedTime: '2026-08-22T14:05:00Z',
   currentVersionId: 'version-file-1',
@@ -66,6 +71,7 @@ export const fileMaterial: Material = {
     id: 'version-file-1',
     versionNumber: 1,
     createdBy: user.id,
+    creatorUsername: user.username,
     versionCreatedTime: '2026-08-22T14:05:00Z',
     snapshot: {
       title: 'Street evidence',
@@ -79,6 +85,7 @@ export const fileMaterial: Material = {
           {
             id: 'file-photo',
             uploaderId: user.id,
+            uploaderUsername: user.username,
             originalFilename: 'street.jpg',
             mimeType: 'image/jpeg',
             sizeBytes: 2048,
@@ -94,6 +101,7 @@ export const fileMaterial: Material = {
           {
             id: 'file-note',
             uploaderId: user.id,
+            uploaderUsername: user.username,
             originalFilename: 'notes.txt',
             mimeType: 'text/plain',
             sizeBytes: 512,

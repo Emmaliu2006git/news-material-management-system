@@ -30,10 +30,19 @@ export interface UploadProgress {
   status: 'hashing' | 'uploading' | 'uploaded' | 'failed'
 }
 
-export async function uploadFiles(
+export interface UploadSession {
+  intents: UploadIntent[]
+  uploaded: Set<number>
+}
+
+export function uploadSessionIsValid(session: UploadSession) {
+  return session.intents.every((intent) => new Date(intent.expiresAt).getTime() > Date.now())
+}
+
+export async function createUploadSession(
   files: File[],
   update: (index: number, progress: UploadProgress) => void,
-): Promise<UploadIntent[]> {
+): Promise<UploadSession> {
   const specs = []
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index]
@@ -49,17 +58,35 @@ export async function uploadFiles(
   if (intents.length !== files.length) {
     throw new Error('The upload service returned an incomplete file set.')
   }
+  return { intents, uploaded: new Set() }
+}
+
+export async function uploadPendingFiles(
+  files: File[],
+  session: UploadSession,
+  update: (index: number, progress: UploadProgress) => void,
+) {
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index]
+    if (session.uploaded.has(index)) continue
     update(index, { name: file.name, percent: 0, status: 'uploading' })
     try {
-      await putFile(intents[index], file, (percent) =>
+      await putFile(session.intents[index], file, (percent) =>
         update(index, { name: file.name, percent, status: percent === 100 ? 'uploaded' : 'uploading' }),
       )
+      session.uploaded.add(index)
     } catch (error) {
       update(index, { name: file.name, percent: 0, status: 'failed' })
       throw error
     }
   }
-  return intents
+}
+
+export async function uploadFiles(
+  files: File[],
+  update: (index: number, progress: UploadProgress) => void,
+): Promise<UploadIntent[]> {
+  const session = await createUploadSession(files, update)
+  await uploadPendingFiles(files, session, update)
+  return session.intents
 }

@@ -25,6 +25,7 @@ export interface ImageAnalysis {
 export interface FileAsset {
   id: string
   uploaderId: string
+  uploaderUsername: string
   originalFilename: string
   mimeType: string
   sizeBytes: number
@@ -58,6 +59,7 @@ export interface Version {
   id: string
   versionNumber: number
   createdBy: string
+  creatorUsername: string
   versionCreatedTime: string
   snapshot: VersionSnapshot
 }
@@ -65,7 +67,9 @@ export interface Version {
 export interface Material {
   id: string
   projectId: string
+  projectTitle: string
   ownerId: string
+  ownerUsername: string
   type: MaterialType
   materialCreatedTime: string
   currentVersionId: string
@@ -78,6 +82,7 @@ export interface SearchResult {
   id: string
   projectId: string
   ownerId: string
+  ownerUsername: string
   type: MaterialType
   materialCreatedTime: string
   currentVersionId: string

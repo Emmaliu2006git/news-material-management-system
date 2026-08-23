@@ -34,12 +34,12 @@ public class MaterialApi {
     public enum FileSelectionKind { EXISTING, UPLOAD }
     public record FileSelectionRequest(FileSelectionKind kind, UUID fileId, UUID uploadIntentId) {}
     public record MaterialVersionRequest(@NotNull Integer expectedCurrentVersion, @NotBlank String title, Instant eventTime, String location, List<String> manualTags, String textBody, String textContent, List<UUID> fileIds, List<UUID> uploadIntentIds, List<FileSelectionRequest> files) {}
-    public record MaterialView(UUID id, UUID projectId, UUID ownerId, MaterialType type, Instant materialCreatedTime, UUID currentVersionId, boolean canEdit, boolean historical, VersionView version) {}
-    public record VersionView(UUID id, int versionNumber, UUID createdBy, Instant versionCreatedTime, VersionSnapshotView snapshot) {}
+    public record MaterialView(UUID id, UUID projectId, String projectTitle, UUID ownerId, String ownerUsername, MaterialType type, Instant materialCreatedTime, UUID currentVersionId, boolean canEdit, boolean historical, VersionView version) {}
+    public record VersionView(UUID id, int versionNumber, UUID createdBy, String creatorUsername, Instant versionCreatedTime, VersionSnapshotView snapshot) {}
     public record VersionSnapshotView(String title, Instant eventTime, String location, List<String> manualTags, VersionContentView content) {}
     public sealed interface VersionContentView permits TextVersionContentView, FileVersionContentView {}
     public record TextVersionContentView(String kind, String textBody) implements VersionContentView { public TextVersionContentView(String textBody){this("TEXT",textBody);} }
     public record FileVersionContentView(String kind, String textContent, List<FileAssetView> files) implements VersionContentView { public FileVersionContentView(String textContent,List<FileAssetView> files){this("FILE",textContent,files);} }
-    public record FileAssetView(UUID id, UUID uploaderId, String originalFilename, String mimeType, long sizeBytes, String checksumSha256, Instant fileCreatedTime, ImageAnalysisView imageAnalysis) {}
+    public record FileAssetView(UUID id, UUID uploaderId, String uploaderUsername, String originalFilename, String mimeType, long sizeBytes, String checksumSha256, Instant fileCreatedTime, ImageAnalysisView imageAnalysis) {}
     public record ImageAnalysisView(ImageAnalysisStatus status, String aiDescription, List<String> aiTags, Instant generatedTime) {}
 }
