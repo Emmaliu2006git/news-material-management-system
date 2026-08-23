@@ -84,3 +84,54 @@ Behavioral tests were introduced before their production implementations and obs
 
 - No live PostgreSQL, S3, or OpenAI-compatible endpoint was available in this task. The complete local H2/storage/provider workflow is integration-tested; production adapters compile, structured provider parsing is unit-tested, and V4 is reviewed against V1-V3.
 - The production AI provider requires `OPENAI_API_KEY`; local demonstrations remain credential-free under the `local` profile.
+
+## Review Fix Round 1
+
+**Status:** DONE
+
+### Findings Resolved
+
+- Added a persisted claim lease. The worker now reclaims expired `PROCESSING` rows, fences stale completions by attempt number, and moves an expired final attempt to `FAILED`.
+- Added PostgreSQL migration backfill plus application reconciliation for existing `image/*` assets. Both paths are idempotent, preserve existing rows, and exclude non-images.
+- Added explicit production provider connect and request/read timeouts. Provider timeouts follow the same persisted retry/backoff path as any other provider failure.
+- Escaped literal backslash, percent, and underscore in free-text `ILIKE` input and added an explicit SQL `ESCAPE` clause. Location and tag filters remain literal Java comparisons and never enter a SQL `LIKE` expression.
+
+### Changed Files
+
+- Analysis entity, repository, worker, service, production provider, and configuration
+- File repository and reconciliation job
+- Search repository/service
+- PostgreSQL V4 migration
+- Worker, state, API/reconciliation, and search regression tests
+
+### TDD Evidence
+
+#### RED
+
+- The focused suite first failed to compile because the lease-aware claim/worker API, reconciliation method, and timeout-aware provider constructor did not exist.
+- After the first production pass, focused tests exposed committed-queue ordering and database timestamp precision assumptions in the new tests; those tests were corrected to drain a bounded durable queue and compare persisted time with database precision.
+- The literal wildcard regression was introduced before escaping and demonstrated that percent and underscore could otherwise act as `LIKE` wildcards.
+
+#### GREEN
+
+- Focused command: `./mvnw -q -Dtest=AnalysisWorkerTest,ImageAnalysisApiTest,ImageAnalysisStateTest,SearchApiTest test`
+- Result: passed, including committed lease recovery, maximum-attempt exhaustion, existing-image reconciliation, timeout retry persistence, and literal wildcard search.
+- Final command: `git diff --check && ./mvnw clean verify`
+- Result: 42 tests, 0 failures, 0 errors, 0 skipped; `BUILD SUCCESS`.
+
+### Self-Review
+
+- Claim and reclaim run under pessimistic locking, and completion/failure carry the claimed attempt number so a late worker cannot overwrite a newer claim.
+- A crash after the last permitted claim cannot leave the row permanently `PROCESSING`; lease expiry transitions it to `FAILED`.
+- V4 uses deterministic UUIDs and `ON CONFLICT (file_id) DO NOTHING`; application reconciliation is also repeat-safe and covered with repeated invocation.
+- The in-process delayed HTTP test exercises the production adapter timeout without network credentials and proves the worker persists the normal retry state.
+- The query still joins search documents to the authoritative current version. Escaping changes literal interpretation only and does not weaken current-only behavior.
+- No image bytes, content, credentials, or signed URLs are logged.
+
+### Commit
+
+- `1093da6` — `fix: harden analysis recovery and search`
+
+### Concerns / Follow-up
+
+- No live PostgreSQL or external OpenAI-compatible endpoint was available. V4 SQL is reviewed against V1-V3; H2 verifies application reconciliation, and an in-process HTTP server verifies the production timeout boundary.
