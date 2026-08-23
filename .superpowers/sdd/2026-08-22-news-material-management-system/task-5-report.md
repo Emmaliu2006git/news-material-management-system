@@ -61,3 +61,57 @@ Status: DONE
 
 - The backend material DTO currently exposes the owner as an ID, not a display username, so the UI faithfully displays that identifier.
 - Task 6 packaging, browser E2E, Compose wiring, and runtime smoke tests are intentionally not included in this task.
+
+---
+
+## Fix Round 1 — DONE
+
+### Delivered
+
+- Local direct uploads now bootstrap the current real CSRF token, attach credentials and the CSRF header only for same-origin URLs, and send only signed required headers to cross-origin object storage.
+- Logical TEXT, FILE, and version submissions keep a stable idempotency key while their payload is unchanged.
+- FILE retries retain valid upload intents and uploaded-file state, retry only failed PUTs, and replay an identical finalization payload/key after a lost response.
+- Search now composes text, type, owner, location, tag, material-created range, and event-time range filters. Date-only end values become inclusive UTC end-of-day instants.
+- Owner choices come from the initial unfiltered project result set.
+- Current and historical snapshot views now show human-readable project, owner, version creator, and file uploader names plus material, version, and file IDs and all required timestamps.
+- Image analysis now shows status, description, AI tags, and generation time.
+- Failed logout keeps the authenticated shell intact and displays the server error.
+- Mobile layouts use a real media-query-driven, accessible expandable navigation control.
+
+### Files
+
+- Security/client: `frontend/src/api/client.ts`, `client.test.ts`, `LocalStorageSecurityTest.java`.
+- Retry flows: `NewMaterialPage.tsx`, `VersionEditorPage.tsx`, `formUtils.ts`, `MaterialFormPage.test.tsx`.
+- Search: `ProjectDetailPage.tsx`, `SearchService.java`, `SearchApiTest.java`.
+- Snapshot contract/UI: `MaterialApi.java`, `MaterialService.java`, `MaterialSnapshotView.tsx`, `types.ts`, fixtures and lifecycle/API tests.
+- Shell/responsive behavior: `Layout.tsx`, `styles.css`, `App.test.tsx`.
+
+### TDD RED Evidence
+
+- Backend metadata regression run: 10 tests executed; missing human-readable DTO fields produced 1 failure and 2 errors before implementation.
+- Direct-upload client run: 5 tests executed; the same-origin CSRF assertion failed before implementation.
+- Stable retry run: 9 tests executed; 3 failed because TEXT keys changed, FILE intents/uploads repeated, and FILE version keys changed.
+- UI behavior run: 13 tests executed; 4 failed for logout error handling, mobile navigation, complete filters, and snapshot metadata before implementation.
+
+### GREEN / Verification Evidence
+
+- Focused backend auth/storage/DTO contract run: 14 tests passed.
+- Frontend unit/integration: 3 files, 27 tests passed.
+- Frontend typecheck: passed.
+- Frontend lint: passed with zero warnings.
+- Frontend production build: passed; 52 modules transformed.
+- Full backend suite: 45 tests passed, 0 failures, 0 errors.
+- `git diff --check`: passed with no whitespace errors.
+
+### Self-review
+
+- Same-origin detection compares parsed origins, so absolute same-origin upload URLs are protected as well as relative local URLs.
+- A fresh CSRF token is bootstrapped for every mutation; cross-origin uploads do not fetch or receive it.
+- Upload intent state is independent from finalization state: unchanged retries reuse both, while materially changed finalization payloads receive a new key.
+- An expired, unfinalized upload session is regenerated; a failed finalization replays the immutable payload/key without repeating PUTs.
+- Search remains current-version-only and introduces no team, role, or administrator concept.
+- UUIDs are visible as traceable identifiers but never substituted for human-readable usernames or project titles.
+- Server `canEdit` remains authoritative for version creation and AI retry; downloads remain available to authenticated non-owners.
+- The earlier owner-display concern is resolved by the additive DTO fields.
+
+### Commit
