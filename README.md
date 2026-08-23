@@ -1,5 +1,123 @@
 # News Material Management System
 
-Run the local demo with `./mvnw spring-boot:run -Dspring-boot.run.profiles=local`.
+A responsive internal newsroom web application for organizing reporting projects, text notes, and uploaded evidence. Users can search the current state of material, inspect immutable version history, download files, and see per-image AI descriptions/tags. Material owners alone can create the next version; every signed-in user can view material and add independent material to a project.
 
-Demo users: `emma / demo-password` and `alex / demo-password`.
+The browser UI and `/api/v1` API are served from the same Spring Boot application in the packaged and Docker demos. There is no native mobile app: phones use the same responsive URL in a browser.
+
+## Prerequisites
+
+- Java 21 or newer
+- Node.js 22 or newer and npm (for local development and tests)
+- `curl`
+- Docker Desktop with WSL integration (only for the Compose demo on Windows/WSL)
+
+The Maven wrapper downloads pinned Node.js 22.20.0 and npm 10.9.3 when packaging, so a system Node installation is not required for `./mvnw package`.
+
+## Local development
+
+From the repository root:
+
+```bash
+./scripts/dev.sh
+```
+
+Open `http://127.0.0.1:5173`. The script installs the locked frontend dependencies, starts Spring Boot with the local H2/filesystem profile on port 8080, waits for health, and starts Vite with an API proxy. Local data is disposable.
+
+## Packaged same-origin demo
+
+```bash
+./mvnw package
+java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=local \
+  --app.analysis.scheduling-enabled=true
+```
+
+Open `http://127.0.0.1:8080`. Maven runs locked frontend install, type checking, unit tests, and production build before copying the SPA into the executable JAR and running backend tests.
+
+## Demo accounts
+
+Both local and Docker demo profiles seed ordinary users only; there are no roles or administrators.
+
+| User | Password |
+| --- | --- |
+| `emma` | `demo-password` |
+| `alex` | `demo-password` |
+
+## Tests
+
+Run every check, including the packaged-JAR browser journey:
+
+```bash
+./scripts/test-all.sh
+```
+
+The deterministic order is: locked install, type check, lint, frontend unit tests, frontend build, backend verification/package, Playwright Chromium install, and Playwright E2E. The E2E uses generated names and tiny synthetic files; it covers login, project creation, text history/current-only search, multi-file upload/download, per-image AI success and isolated failure, and owner authorization.
+
+Focused packaging is also available with:
+
+```bash
+./mvnw verify
+```
+
+## Docker Compose demo
+
+```bash
+cp .env.example .env
+# Replace every placeholder in .env.
+docker compose up --build
+```
+
+Open `http://localhost:8080`. Compose starts the application, PostgreSQL with Flyway migrations, MinIO, and a one-shot bucket initializer. The bucket remains private, services have health checks, and PostgreSQL/MinIO use named volumes. The default AI provider is deterministic and local; no external API key is needed.
+
+This repository was developed in WSL where the Docker daemon was unavailable, so Compose is guarded by an automated configuration contract but was not live-started here. On Windows, enable the distribution under **Docker Desktop → Settings → Resources → WSL Integration** before running it.
+
+To open the demo from another device, set `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` and `MINIO_API_CORS_ALLOW_ORIGIN` in `.env` to hostnames/IPs that device can reach. `localhost` on a phone means the phone itself.
+
+Stop services with `docker compose down`. Add `--volumes` only when you intentionally want to delete demo database and object data.
+
+## Production configuration
+
+For AWS S3, leave `NEWS_MATERIAL_S3_ENDPOINT` and `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` empty, set `NEWS_MATERIAL_S3_PATH_STYLE=false`, and provide:
+
+- `NEWS_MATERIAL_S3_BUCKET`
+- `AWS_REGION`
+- AWS credentials through the standard AWS SDK credential chain (for example an IAM task/instance role)
+- PostgreSQL values through `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`
+
+For OpenAI image analysis, set:
+
+```text
+NEWS_MATERIAL_AI_PROVIDER=openai
+OPENAI_API_KEY=replace-with-a-secret-from-your-secret-manager
+```
+
+Optional settings are `OPENAI_BASE_URL`, `OPENAI_VISION_MODEL`, `OPENAI_CONNECT_TIMEOUT`, and `OPENAI_REQUEST_TIMEOUT`. Never commit real secrets or use the demo passwords in a shared deployment.
+
+## Architecture
+
+```text
+Responsive React SPA ── same-origin HTTP ── Spring Boot API
+                                             ├── PostgreSQL + Flyway (metadata, users, versions, AI state)
+                                             ├── private S3/MinIO (file bytes via presigned URLs)
+                                             └── scheduled image-analysis worker (local or OpenAI provider)
+```
+
+File bytes travel directly between the browser and S3/MinIO using short-lived presigned URLs. Spring Boot authorizes upload/download intent and stores metadata. Search intentionally queries current material versions only. Image analysis is asynchronous and isolated per image, so a failed analysis never makes the material unusable.
+
+## Current limitations
+
+- No native iOS/Android app; use the responsive web URL.
+- No teams, roles, administrator workflow, notifications, or cross-project provenance tracking.
+- Search is current-version keyword/filter search, not semantic/vector search, and does not search historical versions.
+- AI analysis applies to images only. Local AI output is deterministic demo data.
+- The local H2 database is in memory and resets when the process stops.
+- Version history is linear; only the material owner can append a version.
+
+## Troubleshooting
+
+- **Java/Node diagnostic:** run the scripts; they stop early with the missing prerequisite and required version.
+- **Port already used:** free ports 5173/8080 for development, or 8080/9000/9001 for Compose.
+- **Browser test cannot launch:** rerun `./scripts/test-all.sh`; it installs the pinned Playwright browser and does not skip a missing browser.
+- **Phone can open the UI but uploads fail:** use reachable LAN hostnames in the presigner and MinIO CORS values, then restart Compose.
+- **Compose cannot connect in WSL:** enable Docker Desktop WSL integration and confirm `docker info` works inside the distribution.
+- **AI stays pending in a hand-started local JAR:** include `--app.analysis.scheduling-enabled=true` as shown above.

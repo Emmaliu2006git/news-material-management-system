@@ -61,7 +61,7 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    @Profile("local")
+    @Profile({"local", "demo"})
     ApplicationRunner seed(UserRepository users, PasswordEncoder passwords) {
         return args -> {
             for (String username : List.of("emma", "alex")) {

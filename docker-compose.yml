@@ -1,0 +1,86 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/news_material
+      SPRING_DATASOURCE_USERNAME: news_material
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-demo-only-postgres}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-demo-minio-user}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-demo-only-minio-password}
+      AWS_REGION: us-east-1
+      NEWS_MATERIAL_S3_BUCKET: news-material-private
+      NEWS_MATERIAL_S3_ENDPOINT: http://minio:9000
+      NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT: ${NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT:-http://localhost:9000}
+      NEWS_MATERIAL_S3_PATH_STYLE: "true"
+      NEWS_MATERIAL_AI_PROVIDER: ${NEWS_MATERIAL_AI_PROVIDER:-local}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: news_material
+      POSTGRES_USER: news_material
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo-only-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news_material -d news_material"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-demo-minio-user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-demo-only-minio-password}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-http://localhost:8080}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-demo-minio-user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-demo-only-minio-password}
+    entrypoint: >-
+      /bin/sh -c '
+      mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+      mc mb --ignore-existing local/news-material-private &&
+      mc anonymous set none local/news-material-private
+      '
+    restart: "no"
+
+volumes:
+  postgres-data:
+  minio-data:

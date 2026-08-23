@@ -18,6 +18,16 @@ class ImageAnalysisProviderTest {
     }
 
     @Test
+    void localProviderOffersAnExplicitDemoOnlyFailureTriggerByFilename() {
+        LocalImageAnalysisProvider provider = new LocalImageAnalysisProvider();
+
+        assertThatThrownBy(() -> provider.analyze(
+                "valid-image-placeholder".getBytes(), "image/png", "fail-ai-demo.png"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("demo failure");
+    }
+
+    @Test
     void openAiResponseParserAcceptsOnlyStructuredDescriptionAndTags() {
         ObjectMapper json = new ObjectMapper();
         String response = """

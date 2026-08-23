@@ -1,0 +1,12 @@
+spring:
+  config:
+    activate:
+      on-profile: e2e
+app:
+  analysis:
+    provider: local
+    scheduling-enabled: true
+    max-attempts: 1
+    base-backoff: PT0.1S
+    lease-duration: PT30S
+    poll-delay-ms: 100

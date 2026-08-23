@@ -1,0 +1,14 @@
+.git
+.idea
+.vscode
+.tools
+.superpowers
+.local-data
+.playwright-browsers
+target
+frontend/node_modules
+frontend/dist
+playwright-report
+test-results
+.env
+data

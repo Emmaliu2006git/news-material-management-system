@@ -13,6 +13,9 @@ app:
   storage:
     bucket: ${NEWS_MATERIAL_S3_BUCKET:news-material-private}
     region: ${AWS_REGION:us-east-1}
+    endpoint: ${NEWS_MATERIAL_S3_ENDPOINT:}
+    presigner-endpoint: ${NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT:}
+    path-style: ${NEWS_MATERIAL_S3_PATH_STYLE:false}
   upload:
     max-files: 10
     max-file-bytes: 52428800

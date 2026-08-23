@@ -97,7 +97,7 @@ public class AnalysisWorker {
         }
         try {
             byte[] bytes = storage.readBytes(claim.objectKey());
-            ImageAnalysisResult result = provider.analyze(bytes, claim.mimeType());
+            ImageAnalysisResult result = provider.analyze(bytes, claim.mimeType(), claim.originalFilename());
             if (result == null) {
                 throw new IllegalArgumentException("AI provider returned no result");
             }
@@ -120,6 +120,7 @@ public class AnalysisWorker {
         return new Claim(analysis.getId(),
                 shouldProcess ? analysis.getFile().getObjectKey() : null,
                 shouldProcess ? analysis.getFile().getMimeType() : null,
+                shouldProcess ? analysis.getFile().getOriginalFilename() : null,
                 analysis.getAttemptCount(), shouldProcess);
     }
 
@@ -140,7 +141,7 @@ public class AnalysisWorker {
         analysis.recordFailure(now, maxAttempts, baseBackoff);
     }
 
-    private record Claim(UUID analysisId, String objectKey, String mimeType,
+    private record Claim(UUID analysisId, String objectKey, String mimeType, String originalFilename,
                          int attempt, boolean shouldProcess) {
     }
 }

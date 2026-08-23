@@ -23,4 +23,12 @@ public class LocalImageAnalysisProvider implements ImageAnalysisProvider {
             throw new IllegalStateException("Local image analysis failed", exception);
         }
     }
+
+    @Override
+    public ImageAnalysisResult analyze(byte[] imageBytes, String mimeType, String originalFilename) {
+        if (originalFilename != null && originalFilename.toLowerCase().startsWith("fail-ai-")) {
+            throw new IllegalStateException("Local demo failure requested by filename");
+        }
+        return analyze(imageBytes, mimeType);
+    }
 }
