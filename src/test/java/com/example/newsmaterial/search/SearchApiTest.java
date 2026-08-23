@@ -146,6 +146,38 @@ class SearchApiTest {
                 historicalAi.getResponse().getContentAsString(), "$")).isEmpty();
     }
 
+    @Test
+    void treatsBackslashPercentAndUnderscoreAsLiteralSearchAndFilterCharacters() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma, "Literal search");
+        String specialJson = createText(emma, projectId,
+                "100% literal_under_score back\\\\slash", "special body",
+                null, "Zone%_\\\\path", List.of("%", "_", "\\\\"), "literal-special");
+        String specialId = JsonPath.read(specialJson, "$.id");
+        createText(emma, projectId, "Plain material", "ordinary body",
+                null, "Elsewhere", List.of("ordinary"), "literal-plain");
+
+        for (String literal : List.of("%", "_", "\\")) {
+            MvcResult result = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
+                            .session(emma).param("q", literal))
+                    .andExpect(status().isOk()).andReturn();
+            assertThat(JsonPath.<List<String>>read(
+                    result.getResponse().getContentAsString(), "$[*].id")).containsExactly(specialId);
+        }
+
+        MvcResult location = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
+                        .session(emma).param("location", "%"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<String>>read(
+                location.getResponse().getContentAsString(), "$[*].id")).containsExactly(specialId);
+
+        MvcResult tag = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
+                        .session(emma).param("tag", "%"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<String>>read(
+                tag.getResponse().getContentAsString(), "$[*].id")).containsExactly(specialId);
+    }
+
     private String createText(MockHttpSession session, String projectId, String title, String text,
                               String eventTime, String location, List<String> tags, String key) throws Exception {
         String event = eventTime == null ? "null" : "\"" + eventTime + "\"";

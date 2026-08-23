@@ -16,6 +16,7 @@ public interface SearchDocumentRepository extends JpaRepository<SearchDocument, 
 
     @Query(value = "select d.* from search_documents d join materials m on m.id = d.material_id " +
             "and m.current_version_id = d.current_version_id " +
-            "where m.project_id = :projectId and d.content ilike concat('%', :query, '%')", nativeQuery = true)
+            "where m.project_id = :projectId and d.content ilike concat('%', :query, '%') " +
+            "escape '\\'", nativeQuery = true)
     List<SearchDocument> findCurrentMatches(UUID projectId, String query);
 }

@@ -6,9 +6,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -25,11 +28,17 @@ public class OpenAiImageAnalysisProvider implements ImageAnalysisProvider {
                                        ObjectMapper json,
                                        @Value("${app.analysis.openai.base-url:https://api.openai.com/v1}") String baseUrl,
                                        @Value("${app.analysis.openai.api-key:}") String apiKey,
-                                       @Value("${app.analysis.openai.model:gpt-5-mini}") String model) {
+                                       @Value("${app.analysis.openai.model:gpt-5-mini}") String model,
+                                       @Value("${app.analysis.openai.connect-timeout:PT3S}") Duration connectTimeout,
+                                       @Value("${app.analysis.openai.request-timeout:PT20S}") Duration requestTimeout) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("OpenAI API key is required when the OpenAI analysis provider is enabled");
         }
-        this.client = builder.baseUrl(baseUrl)
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(requestTimeout);
+        this.client = builder.requestFactory(requestFactory)
+                .baseUrl(baseUrl)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                 .build();
         this.json = json;

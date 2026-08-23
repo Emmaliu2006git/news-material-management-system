@@ -39,18 +39,18 @@ public class SearchService {
         if (!projects.existsById(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "Project was not found");
         }
-        String query = normalize(filters.q());
+        String query = escapeLike(normalize(filters.q()));
         Map<UUID, UUID> matches = new LinkedHashMap<>();
         if (query == null) {
             materials.findByProject_Id(projectId).forEach(material -> matches.put(material.getId(), null));
         } else {
             for (SearchDocument document : documents.findCurrentMatches(projectId, query)) {
-                    UUID matchedFile = document.getSourceType() == SearchSourceType.IMAGE_AI
-                            ? document.getFileId() : null;
-                    UUID materialId = document.getMaterialId();
-                    if (!matches.containsKey(materialId) || matches.get(materialId) == null && matchedFile != null) {
-                        matches.put(materialId, matchedFile);
-                    }
+                UUID matchedFile = document.getSourceType() == SearchSourceType.IMAGE_AI
+                        ? document.getFileId() : null;
+                UUID materialId = document.getMaterialId();
+                if (!matches.containsKey(materialId) || matches.get(materialId) == null && matchedFile != null) {
+                    matches.put(materialId, matchedFile);
+                }
             }
         }
         return matches.entrySet().stream()
@@ -101,6 +101,13 @@ public class SearchService {
 
     private String normalize(String value) {
         return value == null || value.isBlank() ? null : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String escapeLike(String value) {
+        return value == null ? null : value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     public record SearchFilters(String q, MaterialType materialType, UUID ownerId,

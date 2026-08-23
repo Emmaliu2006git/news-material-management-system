@@ -52,6 +52,9 @@ public class ImageAnalysis {
     @Column(name = "next_attempt_time")
     private Instant nextAttemptTime;
 
+    @Column(name = "lease_expires_at")
+    private Instant leaseExpiresAt;
+
     protected ImageAnalysis() {
     }
 
@@ -67,12 +70,38 @@ public class ImageAnalysis {
     }
 
     public void claim(Instant now) {
-        if (status != ImageAnalysisStatus.PENDING || nextAttemptTime != null && nextAttemptTime.isAfter(now)) {
+        claim(now, Duration.ofMinutes(5));
+    }
+
+    public void claim(Instant now, Duration leaseDuration) {
+        claim(now, leaseDuration, Integer.MAX_VALUE);
+    }
+
+    public boolean claim(Instant now, Duration leaseDuration, int maxAttempts) {
+        if (leaseDuration.isZero() || leaseDuration.isNegative()) {
+            throw new IllegalArgumentException("Lease duration must be positive");
+        }
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("Maximum attempts must be positive");
+        }
+        boolean pendingDue = status == ImageAnalysisStatus.PENDING
+                && (nextAttemptTime == null || !nextAttemptTime.isAfter(now));
+        boolean expiredProcessing = status == ImageAnalysisStatus.PROCESSING
+                && leaseExpiresAt != null && !leaseExpiresAt.isAfter(now);
+        if (!pendingDue && !expiredProcessing) {
             throw new IllegalStateException("Analysis is not eligible");
+        }
+        if (expiredProcessing && attemptCount >= maxAttempts) {
+            status = ImageAnalysisStatus.FAILED;
+            leaseExpiresAt = null;
+            nextAttemptTime = null;
+            return false;
         }
         status = ImageAnalysisStatus.PROCESSING;
         attemptCount++;
         nextAttemptTime = null;
+        leaseExpiresAt = now.plus(leaseDuration);
+        return true;
     }
 
     public void complete(String description, List<String> tags, Instant generatedAt) {
@@ -82,6 +111,7 @@ public class ImageAnalysis {
         status = ImageAnalysisStatus.COMPLETED;
         aiDescription = description;
         aiTags = new ArrayList<>(tags);
+        leaseExpiresAt = null;
         generatedTime = generatedAt;
         nextAttemptTime = null;
     }
@@ -91,10 +121,12 @@ public class ImageAnalysis {
             throw new IllegalStateException("Analysis is not processing");
         }
         if (attemptCount >= maxAttempts) {
+            leaseExpiresAt = null;
             status = ImageAnalysisStatus.FAILED;
             nextAttemptTime = null;
             return;
         }
+        leaseExpiresAt = null;
         status = ImageAnalysisStatus.PENDING;
         nextAttemptTime = now.plus(baseBackoff.multipliedBy(attemptCount));
     }
@@ -104,6 +136,7 @@ public class ImageAnalysis {
             throw new IllegalStateException("Only failed analysis can be retried");
         }
         status = ImageAnalysisStatus.PENDING;
+        leaseExpiresAt = null;
         attemptCount = 0;
         nextAttemptTime = now;
     }
@@ -114,6 +147,7 @@ public class ImageAnalysis {
     public String getAiDescription() { return aiDescription; }
     public List<String> getAiTags() { return List.copyOf(aiTags); }
     public Instant getGeneratedTime() { return generatedTime; }
+    public Instant getLeaseExpiresAt() { return leaseExpiresAt; }
     public int getAttemptCount() { return attemptCount; }
     public Instant getNextAttemptTime() { return nextAttemptTime; }
 }

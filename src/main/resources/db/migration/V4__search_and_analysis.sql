@@ -8,9 +8,16 @@ create table image_analyses (
     generated_time timestamp with time zone null,
     attempt_count integer not null default 0,
     next_attempt_time timestamp with time zone null,
+    lease_expires_at timestamp with time zone null,
     constraint ck_image_analysis_status check (status in ('PENDING','PROCESSING','COMPLETED','FAILED')),
     constraint ck_image_analysis_attempt_count check (attempt_count >= 0)
 );
+
+insert into image_analyses (id, file_id, status, attempt_count, next_attempt_time)
+select md5('image-analysis:' || f.id::text)::uuid, f.id, 'PENDING', 0, current_timestamp
+from file_assets f
+where lower(f.mime_type) like 'image/%'
+on conflict (file_id) do nothing;
 
 create table image_analysis_tags (
     analysis_id uuid not null references image_analyses(id),
@@ -42,7 +49,7 @@ create unique index uq_search_image_document
     where file_id is not null;
 
 create index ix_image_analysis_claim
-    on image_analyses(status, next_attempt_time);
+    on image_analyses(status, next_attempt_time, lease_expires_at);
 
 create index ix_search_documents_current
     on search_documents(material_id, current_version_id);

@@ -23,8 +23,11 @@ app:
     scheduling-enabled: true
     max-attempts: 3
     base-backoff: PT1M
+    lease-duration: ${ANALYSIS_LEASE_DURATION:PT5M}
     poll-delay-ms: 5000
     openai:
       api-key: ${OPENAI_API_KEY:}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       model: ${OPENAI_VISION_MODEL:gpt-5-mini}
+      connect-timeout: ${OPENAI_CONNECT_TIMEOUT:PT3S}
+      request-timeout: ${OPENAI_REQUEST_TIMEOUT:PT20S}

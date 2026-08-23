@@ -25,6 +25,7 @@ public class AnalysisWorker {
     private final int maxAttempts;
     private final Duration baseBackoff;
     private final Consumer<ImageAnalysis> completionIndexer;
+    private final Duration leaseDuration;
 
     @Autowired
     public AnalysisWorker(ImageAnalysisRepository analyses,
@@ -33,8 +34,9 @@ public class AnalysisWorker {
                           PlatformTransactionManager transactionManager,
                           @Value("${app.analysis.max-attempts:3}") int maxAttempts,
                           @Value("${app.analysis.base-backoff:PT1M}") Duration baseBackoff,
+                          @Value("${app.analysis.lease-duration:PT5M}") Duration leaseDuration,
                           SearchDocumentService searchDocuments) {
-        this(analyses, storage, provider, transactionManager, maxAttempts, baseBackoff,
+        this(analyses, storage, provider, transactionManager, maxAttempts, baseBackoff, leaseDuration,
                 searchDocuments::indexCompletedAnalysis);
     }
 
@@ -44,8 +46,19 @@ public class AnalysisWorker {
                           PlatformTransactionManager transactionManager,
                           int maxAttempts,
                           Duration baseBackoff) {
-        this(analyses, storage, provider, transactionManager, maxAttempts, baseBackoff, analysis -> {
-        });
+        this(analyses, storage, provider, transactionManager, maxAttempts, baseBackoff,
+                Duration.ofMinutes(5));
+    }
+
+    public AnalysisWorker(ImageAnalysisRepository analyses,
+                          StoragePort storage,
+                          ImageAnalysisProvider provider,
+                          PlatformTransactionManager transactionManager,
+                          int maxAttempts,
+                          Duration baseBackoff,
+                          Duration leaseDuration) {
+        this(analyses, storage, provider, transactionManager, maxAttempts, baseBackoff, leaseDuration,
+                analysis -> { });
     }
 
     private AnalysisWorker(ImageAnalysisRepository analyses,
@@ -54,6 +67,7 @@ public class AnalysisWorker {
                            PlatformTransactionManager transactionManager,
                            int maxAttempts,
                            Duration baseBackoff,
+                           Duration leaseDuration,
                            Consumer<ImageAnalysis> completionIndexer) {
         this.analyses = analyses;
         this.storage = storage;
@@ -61,6 +75,7 @@ public class AnalysisWorker {
         this.transactions = new TransactionTemplate(transactionManager);
         this.maxAttempts = maxAttempts;
         this.baseBackoff = baseBackoff;
+        this.leaseDuration = leaseDuration;
         this.completionIndexer = completionIndexer;
     }
 
@@ -77,41 +92,55 @@ public class AnalysisWorker {
         if (claim == null) {
             return false;
         }
+        if (!claim.shouldProcess()) {
+            return true;
+        }
         try {
             byte[] bytes = storage.readBytes(claim.objectKey());
             ImageAnalysisResult result = provider.analyze(bytes, claim.mimeType());
             if (result == null) {
                 throw new IllegalArgumentException("AI provider returned no result");
             }
-            transactions.executeWithoutResult(status -> complete(claim.analysisId(), result, now));
+            transactions.executeWithoutResult(status -> complete(claim.analysisId(), claim.attempt(), result, now));
         } catch (RuntimeException failure) {
-            transactions.executeWithoutResult(status -> fail(claim.analysisId(), now));
+            transactions.executeWithoutResult(status -> fail(claim.analysisId(), claim.attempt(), now));
         }
         return true;
     }
 
     private Claim claim(Instant now) {
         List<ImageAnalysis> eligible = analyses.findEligible(
-                ImageAnalysisStatus.PENDING, now, PageRequest.of(0, 1));
+                ImageAnalysisStatus.PENDING, ImageAnalysisStatus.PROCESSING,
+                now, PageRequest.of(0, 1));
         if (eligible.isEmpty()) {
             return null;
         }
         ImageAnalysis analysis = eligible.getFirst();
-        analysis.claim(now);
-        return new Claim(analysis.getId(), analysis.getFile().getObjectKey(), analysis.getFile().getMimeType());
+        boolean shouldProcess = analysis.claim(now, leaseDuration, maxAttempts);
+        return new Claim(analysis.getId(),
+                shouldProcess ? analysis.getFile().getObjectKey() : null,
+                shouldProcess ? analysis.getFile().getMimeType() : null,
+                analysis.getAttemptCount(), shouldProcess);
     }
 
-    private void complete(UUID analysisId, ImageAnalysisResult result, Instant now) {
+    private void complete(UUID analysisId, int attempt, ImageAnalysisResult result, Instant now) {
         ImageAnalysis analysis = analyses.findByIdForUpdate(analysisId).orElseThrow();
+        if (analysis.getStatus() != ImageAnalysisStatus.PROCESSING || analysis.getAttemptCount() != attempt) {
+            return;
+        }
         analysis.complete(result.description(), result.tags(), now);
         completionIndexer.accept(analysis);
     }
 
-    private void fail(UUID analysisId, Instant now) {
+    private void fail(UUID analysisId, int attempt, Instant now) {
         ImageAnalysis analysis = analyses.findByIdForUpdate(analysisId).orElseThrow();
+        if (analysis.getStatus() != ImageAnalysisStatus.PROCESSING || analysis.getAttemptCount() != attempt) {
+            return;
+        }
         analysis.recordFailure(now, maxAttempts, baseBackoff);
     }
 
-    private record Claim(UUID analysisId, String objectKey, String mimeType) {
+    private record Claim(UUID analysisId, String objectKey, String mimeType,
+                         int attempt, boolean shouldProcess) {
     }
 }

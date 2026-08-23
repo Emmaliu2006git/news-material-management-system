@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -21,13 +22,23 @@ public class ImageAnalysisService {
     }
 
     public void ensurePending(FileAsset file, Instant now) {
-        if (!file.getMimeType().toLowerCase().startsWith("image/")) {
+        if (!file.getMimeType().toLowerCase(Locale.ROOT).startsWith("image/")) {
             return;
         }
         if (analyses.findByFile_Id(file.getId()).isEmpty()) {
             analyses.save(ImageAnalysis.pending(UUID.randomUUID(), file, now));
         }
     }
+
+    @Transactional
+    public int reconcileMissing(Instant now) {
+        int before = Math.toIntExact(analyses.count());
+        for (FileAsset file : files.findByMimeTypeStartingWithIgnoreCase("image/")) {
+            ensurePending(file, now);
+        }
+        return Math.toIntExact(analyses.count()) - before;
+    }
+
     @Transactional
     public RetryResult retry(UUID fileId, UUID userId, Instant now) {
         FileAsset file = files.findById(fileId)

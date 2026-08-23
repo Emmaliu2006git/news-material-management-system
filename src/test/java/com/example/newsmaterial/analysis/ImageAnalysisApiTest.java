@@ -32,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ImageAnalysisApiTest {
     @Autowired WebApplicationContext context;
     @Autowired ImageAnalysisRepository analyses;
+    @Autowired ImageAnalysisService analysisService;
     MockMvc mvc;
 
     @BeforeEach
@@ -66,6 +67,18 @@ class ImageAnalysisApiTest {
                 .isNull();
         assertThat(analyses.countByFile_Id(java.util.UUID.fromString(imageFileId))).isEqualTo(1);
         assertThat(analyses.count()).isEqualTo(analysisCountBefore + 1);
+
+        UUID imageId = UUID.fromString(imageFileId);
+        UUID noteId = UUID.fromString(JsonPath.read(json, "$.version.snapshot.content.files[1].id"));
+        analyses.delete(analyses.findByFile_Id(imageId).orElseThrow());
+        analyses.flush();
+        assertThat(analyses.countByFile_Id(imageId)).isZero();
+
+        analysisService.reconcileMissing(Instant.parse("2026-08-22T12:00:00Z"));
+        analysisService.reconcileMissing(Instant.parse("2026-08-22T12:01:00Z"));
+
+        assertThat(analyses.countByFile_Id(imageId)).isEqualTo(1);
+        assertThat(analyses.countByFile_Id(noteId)).isZero();
     }
 
     @Test

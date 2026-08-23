@@ -20,7 +20,10 @@ public interface ImageAnalysisRepository extends JpaRepository<ImageAnalysis, UU
     Optional<ImageAnalysis> findByIdForUpdate(UUID id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select a from ImageAnalysis a join fetch a.file where a.status = :status and " +
-            "(a.nextAttemptTime is null or a.nextAttemptTime <= :now) order by a.nextAttemptTime, a.id")
-    List<ImageAnalysis> findEligible(ImageAnalysisStatus status, Instant now, Pageable pageable);
+    @Query("select a from ImageAnalysis a join fetch a.file where " +
+            "(a.status = :pending and (a.nextAttemptTime is null or a.nextAttemptTime <= :now)) or " +
+            "(a.status = :processing and a.leaseExpiresAt is not null and a.leaseExpiresAt <= :now) " +
+            "order by case when a.status = :pending then a.nextAttemptTime else a.leaseExpiresAt end, a.id")
+    List<ImageAnalysis> findEligible(ImageAnalysisStatus pending, ImageAnalysisStatus processing,
+                                     Instant now, Pageable pageable);
 }

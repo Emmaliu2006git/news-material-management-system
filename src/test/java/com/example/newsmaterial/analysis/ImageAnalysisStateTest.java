@@ -57,4 +57,23 @@ class ImageAnalysisStateTest {
         assertThat(analysis.getGeneratedTime()).isEqualTo(completed);
         assertThat(analysis.getNextAttemptTime()).isNull();
     }
+
+    @Test
+    void anExpiredClaimStillCountsTowardTheMaximumAttempts() {
+        Instant started = Instant.parse("2026-08-22T12:00:00Z");
+        Duration lease = Duration.ofSeconds(30);
+        Duration backoff = Duration.ofSeconds(10);
+        ImageAnalysis analysis = ImageAnalysis.pending(UUID.randomUUID(), null, started);
+
+        analysis.claim(started, lease);
+        analysis.claim(started.plus(lease), lease);
+        analysis.recordFailure(started.plus(lease), 3, backoff);
+        Instant thirdAttempt = analysis.getNextAttemptTime();
+        analysis.claim(thirdAttempt, lease);
+        analysis.recordFailure(thirdAttempt, 3, backoff);
+
+        assertThat(analysis.getStatus()).isEqualTo(ImageAnalysisStatus.FAILED);
+        assertThat(analysis.getAttemptCount()).isEqualTo(3);
+        assertThat(analysis.getLeaseExpiresAt()).isNull();
+    }
 }
