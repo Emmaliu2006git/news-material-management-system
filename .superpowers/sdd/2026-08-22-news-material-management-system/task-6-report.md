@@ -96,3 +96,20 @@ Additional checks:
 
 - Docker is unavailable inside the current WSL distribution, so the Compose stack could not be live-started. The semantic Compose contract test passed, image release tags were verified upstream, and the README documents the Docker Desktop WSL integration requirement.
 - The locked frontend toolchain reports two high-severity findings in development-only dependencies. `npm audit --omit=dev` reports zero production vulnerabilities; no forced dependency rewrite was applied.
+
+## Fix Round 1
+
+Addressed both Important review findings:
+
+1. `scripts/dev.sh` now explicitly passes `--app.analysis.scheduling-enabled=true`, so images uploaded through the advertised Vite/local-backend workflow are processed by the deterministic local provider.
+2. `README.md` now documents that migration `V4` creates `pg_trgm`, the required Flyway/application database permission when it is absent, the safer administrator preinstallation option for managed services, and credential-free installation/verification commands.
+
+TDD and verification evidence:
+
+- RED: `./mvnw -Dskip.frontend=true -Dtest=DevWorkflowContractTest test` failed because `scripts/dev.sh` did not contain the required scheduling override.
+- GREEN: the same focused command passed 1/1 after the minimal script change.
+- `bash -n scripts/dev.sh`: passed.
+- `git diff --check`: passed.
+- `./scripts/test-all.sh`: passed end to end with type check, zero-warning lint, 29/29 frontend unit tests, production build, 62/62 backend tests, executable JAR packaging, and 1/1 packaged-JAR Chromium E2E.
+
+Remaining environmental concern is unchanged: Docker is unavailable in the current WSL distribution, so Compose remains contract-validated rather than live-started.

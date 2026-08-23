@@ -53,7 +53,7 @@ run_npm --prefix "${PROJECT_ROOT}/frontend" ci
 
 "${PROJECT_ROOT}/mvnw" -f "${PROJECT_ROOT}/pom.xml" -Dskip.frontend=true -DskipTests \
   spring-boot:run -Dspring-boot.run.profiles=local \
-  -Dspring-boot.run.arguments="--app.storage.local-root=${PROJECT_ROOT}/.local-data/storage" &
+  -Dspring-boot.run.arguments="--app.storage.local-root=${PROJECT_ROOT}/.local-data/storage --app.analysis.scheduling-enabled=true" &
 BACKEND_PID="$!"
 
 for attempt in $(seq 1 60); do

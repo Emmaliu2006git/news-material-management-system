@@ -77,6 +77,28 @@ Stop services with `docker compose down`. Add `--volumes` only when you intentio
 
 ## Production configuration
 
+### PostgreSQL extension prerequisite
+
+Migration `V4` runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` because the current-version search index uses PostgreSQL trigram operators. If the extension is not already installed, the database identity used by Flyway must have permission to create it and the managed service must allow it. An application role without that permission will fail startup at `V4`.
+
+For a least-privilege production setup, have a database administrator preinstall the extension once, before the application's first startup. The regular application/Flyway role can then remain unable to create extensions:
+
+```bash
+psql --host=db.example.internal --dbname=news_material --username=db_admin \
+  --command='CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+```
+
+Use your provider's interactive, IAM, or secret-manager authentication; do not put a password in the command or repository. Verify the prerequisite without exposing credentials:
+
+```bash
+psql --host=db.example.internal --dbname=news_material --username=news_material_app \
+  --command="SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_trgm';"
+```
+
+Replace the example host, database, and user identifiers for your environment; none of them should contain a password.
+
+The verification must return one `pg_trgm` row before Flyway runs. On managed PostgreSQL, follow the provider's allowlist/extension workflow if direct `CREATE EXTENSION` is restricted.
+
 For AWS S3, leave `NEWS_MATERIAL_S3_ENDPOINT` and `NEWS_MATERIAL_S3_PRESIGNER_ENDPOINT` empty, set `NEWS_MATERIAL_S3_PATH_STYLE=false`, and provide:
 
 - `NEWS_MATERIAL_S3_BUCKET`
