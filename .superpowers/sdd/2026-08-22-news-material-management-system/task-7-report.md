@@ -166,3 +166,101 @@ Docker, a live PostgreSQL instance, a live S3-compatible service, and a live Ope
 - The application currently relies on standard Spring logs and health information; it has no custom correlation IDs, business metrics, rate limiting, malware scanning, or production alert rules.
 - Login is intentionally exempt from CSRF so a browser can establish the first session; authenticated state-changing routes require the CSRF cookie/header pair.
 - No Java CVE scanner is configured, so Java vulnerability status is not asserted beyond successful dependency resolution and tests.
+
+## Fix Round 1
+
+### Findings addressed
+
+1. Material title, location, tag items, and idempotency keys previously reached persistence without matching the schema's length limits. Blank tags were silently removed. The service now normalizes and validates before fingerprinting, lookup-dependent work, or persistence: title 240, location 240, every tag nonblank/80, and normalized idempotency key nonblank/255. TEXT create, FILE create, and the shared TEXT/FILE version path return `400 VALIDATION_ERROR` for invalid values.
+2. Project title was inspected separately. `ProjectRequest` already enforces nonblank/160 and matches both `ReportingProject` and Flyway `V1`; no project code change was required.
+3. The explicit `GET /materials/{id}/versions/{number}` route derived `historical` from whether the selected version was current. It now always returns `historical:true` and `canEdit:false`; only `GET /materials/{id}` is the editable current route.
+4. Idempotency fingerprints used raw request strings while persistence used trimmed strings. Keys, title, location, tags, TEXT body, and FILE notes are now normalized once and the same values feed fingerprinting and persistence. Duplicate normalized tags keep the first position.
+5. Compose previously exposed only a subset of documented overrides. The Compose file, safe `.env.example`, deterministic contract test, and operations guide now agree on credentials, server port, database settings, S3 settings, OpenAI settings, worker settings, and upload limits. The guide separates Compose substitution inputs from direct application/cloud environment.
+6. API documentation now states that filename and MIME type are both nonblank, control-free, and length-limited. Demo documentation distinguishes unit-level `matchMedia` navigation coverage from manual narrow-layout and real-device checks. Operations now exposes the missing Java CVE-scanner limitation.
+
+No roles, teams, Kafka, native app, delete workflow, vector search, media editor, or provenance feature was added.
+
+### RED evidence
+
+The new focused command was:
+
+```bash
+./mvnw -Dskip.frontend=true   -Dtest=MaterialInputValidationTest,TextMaterialLifecycleTest,DockerComposeContractTest test
+```
+
+Before production/configuration changes it ran 12 tests with 8 expected failures:
+
+- four input-limit tests received `404` or `422` instead of stable `400`;
+- a whitespace-variant create used a second Material ID instead of replaying;
+- a whitespace-variant version replay returned `409`;
+- the explicit current-version history route returned `historical:false`;
+- the Compose app environment lacked `SERVER_PORT` and the documented override mappings.
+
+These failures directly reproduced each reported behavior rather than failing on test setup.
+
+### GREEN evidence
+
+- `MaterialInputValidationTest,TextMaterialLifecycleTest`: 10 tests, 0 failures/errors.
+- `DockerComposeContractTest`: 2 tests, 0 failures/errors.
+- The exact Compose contract asserts every `.env.example` key, credential mapping, browser/internal endpoint, app/health port, analysis setting, and upload setting.
+- The project title/schema inspection confirmed the existing 160-character request/entity/migration agreement.
+
+### Full verification
+
+A fresh `./scripts/test-all.sh` completed successfully after all changes:
+
+1. locked frontend install: 0 audit vulnerabilities;
+2. TypeScript type check: passed;
+3. ESLint with zero warnings: passed;
+4. frontend unit tests: 29/29;
+5. production frontend build: passed;
+6. backend verify/package: 71/71, 0 failures/errors/skips;
+7. packaged-JAR Chromium journey: 1/1 passed in 6.5 seconds.
+
+The executable JAR SHA-256 was:
+
+```text
+a768bfec964a9b856c98a2487de6564640147b414e14e4594573c994f4ca0c73
+```
+
+JAR inspection again confirmed Flyway `V1`–`V4`, SPA `index.html`, and hashed JS/CSS assets. `npm audit --omit=dev` returned 0 vulnerabilities. `git diff --check` and the tracked-file secret scan were clean.
+
+### Fresh-checkout evidence
+
+Committed fix `0129ac7` was cloned without hardlinks to:
+
+```text
+/tmp/news-material-task7-fix1-fresh-0129ac7-a/repo
+```
+
+Before building, the clone had no `.tools`, `target`, `frontend/node_modules`, `frontend/dist`, or `frontend/.playwright-browsers`. Following README command `./mvnw package` installed project-local Node 22.20.0/npm 10.9.3, passed 29 frontend tests, passed 71 backend tests, built the SPA, and produced the executable JAR with `BUILD SUCCESS` in 1 minute 6 seconds.
+
+The build used the host Maven/npm download caches and would require network access for cache misses; it is not an offline-build claim. An initial harness attempt lost a shell-local temporary-path variable at the permission boundary and tried `/repo`; it failed before cloning or changing project state. Retrying with the explicit safe `/tmp` path above succeeded. This was an orchestration issue, not a product failure.
+
+### Files
+
+- `MaterialService.java`: normalized validation, fingerprint/persistence alignment, and explicit historical-route semantics.
+- `MaterialInputValidationTest.java`: API regressions for TEXT/FILE creation, shared TEXT/FILE version requests, and every material mutation's idempotency key.
+- `TextMaterialLifecycleTest.java`: current-version historical-route and create/version idempotency normalization regressions.
+- `docker-compose.yml`, `.env.example`, `DockerComposeContractTest.java`: exact configurable Compose contract.
+- `docs/api.md`, `docs/demo-script.md`, `docs/operations.md`: exact limits, normalization, route, mobile-evidence, environment, and Java-audit boundaries.
+
+### Self-review
+
+- Validation occurs before database-width failures and before FILE intent verification can mask malformed common metadata.
+- Normalized values are fingerprinted and persisted from the same local values.
+- Key normalization happens before idempotency lookup and storage.
+- Tag order remains meaningful; only exact duplicates after trimming are removed.
+- Existing content semantics are preserved: TEXT body is trimmed/nonblank and FILE notes are trimmed/nullable.
+- Version history retains the identical Material/Version snapshot layout while the explicit route is always read-only.
+- Compose fallback secrets remain demo-only and the documentation tells operators to replace them.
+- Live Docker/PostgreSQL/MinIO/S3/OpenAI and real-device mobile success are still not claimed.
+
+### Commits
+
+- `0129ac7 fix: enforce stable material contracts`
+- This report append is committed separately.
+
+### Remaining concerns
+
+The existing delivery boundaries remain: live infrastructure and real-device mobile need the documented manual checks; no Java CVE scanner is configured; upload-orphan cleanup and custom production observability remain out of scope and explicitly documented.
