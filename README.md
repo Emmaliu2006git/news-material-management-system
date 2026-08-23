@@ -4,6 +4,15 @@ A responsive internal newsroom web application for organizing reporting projects
 
 The browser UI and `/api/v1` API are served from the same Spring Boot application in the packaged and Docker demos. There is no native mobile app: phones use the same responsive URL in a browser.
 
+## Documentation
+
+- [`docs/design.md`](docs/design.md) — scope, architecture, domain model, and acceptance criteria.
+- [`docs/api.md`](docs/api.md) — exact authentication, CSRF, fields, endpoints, errors, upload, version, search, download, and retry contracts.
+- [`docs/demo-script.md`](docs/demo-script.md) — five-minute local demo and manual mobile viewport checklist.
+- [`docs/operations.md`](docs/operations.md) — profiles, environment variables, PostgreSQL/Flyway, private S3, OpenAI privacy, recovery, rollback, and limitations.
+
+Start with the packaged demo below for the shortest working path. Use the operations guide before Compose or cloud deployment.
+
 ## Prerequisites
 
 - Java 21 or newer

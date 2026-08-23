@@ -26,7 +26,16 @@ public class UploadIntentService {
     @Transactional public List<IntentResult> create(UUID userId,List<UploadFileSpec> files){
         if(files==null||files.isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST,"INVALID_UPLOAD_REQUEST","At least one file is required");
         if(files.size()>maxFiles) limit(); long total=0;
-        for(UploadFileSpec f:files){if(f.sizeBytes()<=0||f.sizeBytes()>maxFileBytes) limit(); total=Math.addExact(total,f.sizeBytes()); if(total>maxTotalBytes) limit(); validateMime(f.mimeType()); if(f.originalFilename()==null||f.originalFilename().isBlank()||f.checksumSha256()==null||!SHA.matcher(f.checksumSha256()).matches()) throw new ApiException(HttpStatus.BAD_REQUEST,"INVALID_UPLOAD_REQUEST","File metadata is invalid");}
+        for(UploadFileSpec f:files){
+            if(f==null||invalidText(f.originalFilename(),255)||invalidText(f.mimeType(),160)
+                    ||f.checksumSha256()==null||!SHA.matcher(f.checksumSha256()).matches()){
+                throw new ApiException(HttpStatus.BAD_REQUEST,"INVALID_UPLOAD_REQUEST","File metadata is invalid");
+            }
+            if(f.sizeBytes()<=0||f.sizeBytes()>maxFileBytes) limit();
+            total=Math.addExact(total,f.sizeBytes());
+            if(total>maxTotalBytes) limit();
+            validateMime(f.mimeType());
+        }
         AppUser user=users.findById(userId).orElseThrow(); Instant now=Instant.now(),expires=now.plus(ttl); List<IntentResult> result=new ArrayList<>();
         for(UploadFileSpec f:files){UUID id=UUID.randomUUID();String key="uploads/"+userId+"/"+UUID.randomUUID()+"/"+safe(f.originalFilename()); UploadIntent intent=intents.save(new UploadIntent(id,user,key,f.originalFilename().trim(),f.mimeType().trim().toLowerCase(),f.sizeBytes(),f.checksumSha256().toLowerCase(),expires,now)); StoragePort.UploadTarget target=storage.createUploadTarget(id,key,intent.getMimeType(),intent.getSizeBytes(),intent.getChecksumSha256(),expires);result.add(new IntentResult(id,key,target.uploadUrl(),target.requiredHeaders(),expires));}
         return result;
@@ -39,6 +48,7 @@ public class UploadIntentService {
     private UploadIntent ownedPending(UUID id,UUID userId){UploadIntent i=intents.findByIdForUpdate(id).orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"UPLOAD_INTENT_NOT_FOUND","Upload intent was not found"));if(!i.getUser().getId().equals(userId))throw new ApiException(HttpStatus.FORBIDDEN,"FORBIDDEN","You do not have permission for this action");if(i.getStatus()!=UploadIntentStatus.PENDING)throw new ApiException(HttpStatus.CONFLICT,"UPLOAD_INTENT_CONSUMED","Upload intent has already been used");return i;}
     private void limit(){throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE,"UPLOAD_LIMIT_EXCEEDED","Upload limits were exceeded");}
     private void validateMime(String mime){String m=mime==null?"":mime.toLowerCase();if(!(m.startsWith("image/")||m.startsWith("video/")||m.startsWith("audio/")||m.equals("application/pdf")||m.equals("text/plain")))throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,"UNSUPPORTED_FILE_TYPE","File type is not supported");}
+    private boolean invalidText(String value,int max){return value==null||value.isBlank()||value.length()>max||value.chars().anyMatch(Character::isISOControl);}
     private String safe(String name){return name.replaceAll("[^A-Za-z0-9._-]","_");}
     private String sha(byte[] bytes){try{return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));}catch(Exception e){throw new IllegalStateException(e);}}
     public record UploadFileSpec(String originalFilename,String mimeType,long sizeBytes,String checksumSha256){}

@@ -65,6 +65,23 @@ class UploadIntentServiceTest {
                 .andExpect(status().isUnsupportedMediaType()).andExpect(jsonPath("$.code").value("UNSUPPORTED_FILE_TYPE"));
     }
 
+    @Test void rejectsMissingUnsafeOrOversizedFileMetadataWithStableClientError() throws Exception {
+        MockHttpSession emma = login("emma");
+        invalidMetadata(emma, "null");
+        invalidMetadata(emma, file("unsafe\\nname.txt", "text/plain", 1, SHA_A));
+        invalidMetadata(emma, file("a".repeat(256), "text/plain", 1, SHA_A));
+        invalidMetadata(emma, file("a.txt", "text/" + "a".repeat(156), 1, SHA_A));
+    }
+
+    private void invalidMetadata(MockHttpSession session, String fileJson) throws Exception {
+        mvc.perform(post("/api/v1/uploads/intents").session(session)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"files\":[" + fileJson + "]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_UPLOAD_REQUEST"));
+    }
+
     @Test void expiredIntentCannotReceiveLocalUpload() throws Exception {
         MockHttpSession emma = login("emma");
         MvcResult result = intent(emma, "expired.txt", "text/plain", 1, SHA_A);
