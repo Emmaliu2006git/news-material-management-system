@@ -1,0 +1,158 @@
+import { useState } from 'react'
+import { api, ApiError } from '../api/client'
+import type { FileAsset, Material } from '../api/types'
+import { TagList } from '../components/Layout'
+
+function dateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function bytes(value: number) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function FileCard({
+  file,
+  matched,
+  canEdit,
+}: {
+  file: FileAsset
+  matched: boolean
+  canEdit: boolean
+}) {
+  const [analysisStatus, setAnalysisStatus] = useState(file.imageAnalysis?.status)
+  const [message, setMessage] = useState('')
+  const [downloading, setDownloading] = useState(false)
+
+  async function download() {
+    setDownloading(true)
+    setMessage('')
+    try {
+      const { downloadUrl } = await api.downloadUrl(file.id)
+      const anchor = document.createElement('a')
+      anchor.href = downloadUrl
+      anchor.download = file.originalFilename
+      anchor.rel = 'noopener'
+      anchor.click()
+    } catch (caught) {
+      setMessage(caught instanceof ApiError ? caught.message : 'The download could not be prepared.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  async function retry() {
+    setMessage('')
+    try {
+      const result = await api.retryAnalysis(file.id)
+      setAnalysisStatus(result.status as typeof analysisStatus)
+    } catch (caught) {
+      setMessage(caught instanceof ApiError ? caught.message : 'AI analysis could not be retried.')
+    }
+  }
+
+  return (
+    <article
+      aria-label={file.originalFilename}
+      className={`file-card${matched ? ' file-card--matched' : ''}`}
+    >
+      <div className="file-card__top">
+        <div className="file-icon" aria-hidden="true">{file.mimeType.startsWith('image/') ? 'IMG' : 'FILE'}</div>
+        <div className="grow">
+          <h3>{file.originalFilename}</h3>
+          <p>{file.mimeType} · {bytes(file.sizeBytes)}</p>
+        </div>
+        {matched && <span className="match-pill">Search match</span>}
+      </div>
+      <dl className="compact-meta">
+        <div><dt>Uploaded</dt><dd>{dateTime(file.fileCreatedTime)}</dd></div>
+        <div><dt>Checksum</dt><dd title={file.checksumSha256}>{file.checksumSha256.slice(0, 12)}…</dd></div>
+      </dl>
+      {file.imageAnalysis && (
+        <section className="analysis-panel" aria-label="AI analysis">
+          <div className="analysis-panel__heading">
+            <h4>AI image analysis</h4>
+            <span className={`status-pill status-pill--${analysisStatus?.toLowerCase()}`}>{analysisStatus}</span>
+          </div>
+          {file.imageAnalysis.aiDescription && <p>{file.imageAnalysis.aiDescription}</p>}
+          <TagList tags={file.imageAnalysis.aiTags} kind="ai" />
+          {canEdit && analysisStatus === 'FAILED' && (
+            <button className="button button--small" type="button" onClick={retry}>Retry AI analysis</button>
+          )}
+        </section>
+      )}
+      <button className="button button--secondary button--small" type="button" disabled={downloading} onClick={download}>
+        {downloading ? 'Preparing…' : `Download ${file.originalFilename}`}
+      </button>
+      {message && <div role="alert" className="inline-message inline-message--error">{message}</div>}
+    </article>
+  )
+}
+
+export function MaterialSnapshotView({
+  material,
+  highlightedFileId,
+}: {
+  material: Material
+  highlightedFileId?: string | null
+}) {
+  const { snapshot } = material.version
+  const content = snapshot.content
+
+  return (
+    <article className="snapshot">
+      <header className="snapshot__header">
+        <div>
+          <div className={`type-badge type-badge--${material.type.toLowerCase()}`}>{content.kind === 'TEXT' ? 'Text material' : 'File material'}</div>
+          <h1>{snapshot.title}</h1>
+        </div>
+        <div className="version-chip">Version {material.version.versionNumber}</div>
+      </header>
+      <dl className="metadata-grid">
+        <div><dt>Owner</dt><dd>{material.ownerId}</dd></div>
+        <div><dt>Material created</dt><dd>{dateTime(material.materialCreatedTime)}</dd></div>
+        <div><dt>Version created</dt><dd>{dateTime(material.version.versionCreatedTime)}</dd></div>
+        <div><dt>Material type</dt><dd>{content.kind === 'TEXT' ? 'Text' : 'File'}</dd></div>
+        {snapshot.eventTime && <div><dt>Event time</dt><dd>{dateTime(snapshot.eventTime)}</dd></div>}
+        {snapshot.location && <div><dt>Location</dt><dd>{snapshot.location}</dd></div>}
+      </dl>
+      <section className="snapshot__section" aria-labelledby="manual-tags-heading">
+        <h2 id="manual-tags-heading">Manual tags</h2>
+        {snapshot.manualTags.length ? <TagList tags={snapshot.manualTags} kind="manual" /> : <p className="muted">No manual tags</p>}
+      </section>
+      {content.kind === 'TEXT' ? (
+        <section className="snapshot__section prose" aria-labelledby="text-content-heading">
+          <h2 id="text-content-heading">Text content</h2>
+          <p>{content.textBody}</p>
+        </section>
+      ) : (
+        <>
+          {content.textContent && (
+            <section className="snapshot__section prose" aria-labelledby="file-text-heading">
+              <h2 id="file-text-heading">Material notes</h2>
+              <p>{content.textContent}</p>
+            </section>
+          )}
+          <section className="snapshot__section" aria-labelledby="files-heading">
+            <div className="section-heading"><h2 id="files-heading">Files</h2><span>{content.files.length}</span></div>
+            <div className="file-list">
+              {content.files.map((file) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  matched={file.id === highlightedFileId}
+                  canEdit={material.canEdit && !material.historical}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </article>
+  )
+}

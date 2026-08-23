@@ -1,0 +1,181 @@
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import { describe, expect, it } from 'vitest'
+import { App } from './App'
+import {
+  fileMaterial,
+  historicalTextMaterial,
+  installApi,
+  json,
+  project,
+  textMaterial,
+} from './test/fixtures'
+
+function renderRoute(route: string) {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <App />
+    </MemoryRouter>,
+  )
+}
+
+describe('authentication shell', () => {
+  it('shows a clear error for invalid credentials and supports a successful login', async () => {
+    const api = installApi({ me: null })
+    api.mockImplementation((input, init) => {
+      const url = String(input)
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/me')) return json({ code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required', requestId: 'req', details: [] }, 401)
+      if (url.endsWith('/auth/login')) {
+        const body = JSON.parse(String(init?.body))
+        return body.password === 'correct'
+          ? json({ id: 'user-emma', username: 'emma' })
+          : json({ code: 'INVALID_CREDENTIALS', message: 'Invalid username or password', requestId: 'req', details: [] }, 401)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const user = userEvent.setup()
+    renderRoute('/login')
+
+    await user.type(await screen.findByLabelText(/username/i), 'emma')
+    await user.type(screen.getByLabelText(/password/i), 'wrong')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid username or password')
+
+    await user.clear(screen.getByLabelText(/password/i))
+    await user.type(screen.getByLabelText(/password/i), 'correct')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+    expect(await screen.findByRole('heading', { name: /reporting projects/i })).toBeInTheDocument()
+  })
+
+  it('restores a session and exposes responsive navigation and logout', async () => {
+    installApi()
+    renderRoute('/projects')
+
+    expect(await screen.findByText('Newsroom Materials')).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /projects/i })).toHaveAttribute('href', '/projects')
+    expect(screen.getByRole('button', { name: /log out/i })).toBeInTheDocument()
+  })
+})
+
+describe('projects and current-only search', () => {
+  it('lists and creates reporting projects', async () => {
+    const api = installApi()
+    api.mockImplementation((input, init) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/projects') && init?.method === 'POST') {
+        return json({ ...project, id: 'project-fire', title: 'Warehouse fire' }, 201)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const user = userEvent.setup()
+    renderRoute('/projects')
+
+    expect(await screen.findByRole('link', { name: 'Downtown flood' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/new project title/i), 'Warehouse fire')
+    await user.click(screen.getByRole('button', { name: /create project/i }))
+    expect(await screen.findByRole('link', { name: 'Warehouse fire' })).toBeInTheDocument()
+  })
+
+  it('submits current-version filters and marks an AI image match', async () => {
+    const api = installApi({
+      search: [{
+        id: 'material-file',
+        projectId: project.id,
+        ownerId: 'user-emma',
+        type: 'FILE',
+        materialCreatedTime: '2026-08-22T14:05:00Z',
+        currentVersionId: 'version-file-1',
+        currentVersionNumber: 1,
+        title: 'Street evidence',
+        eventTime: null,
+        location: 'East entrance',
+        manualTags: ['field'],
+        matchedFileId: 'file-photo',
+      }],
+    })
+    const user = userEvent.setup()
+    renderRoute('/projects/project-flood')
+
+    expect(await screen.findByRole('heading', { name: 'Downtown flood' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/search current materials/i), 'flooded street')
+    await user.selectOptions(screen.getByLabelText(/material type/i), 'FILE')
+    await user.click(screen.getByRole('button', { name: /^search$/i }))
+
+    expect(await screen.findByRole('link', { name: 'Street evidence' })).toBeInTheDocument()
+    expect(screen.getByText(/matched an ai-analyzed image/i)).toBeInTheDocument()
+    expect(api).toHaveBeenCalledWith(
+      expect.stringContaining('q=flooded+street'),
+      expect.objectContaining({ credentials: 'include' }),
+    )
+  })
+})
+
+describe('material snapshots and permissions', () => {
+  it('uses the complete snapshot view for the current text version', async () => {
+    installApi({ material: textMaterial })
+    renderRoute('/materials/material-text')
+
+    expect(await screen.findByRole('heading', { name: 'River level update' })).toBeInTheDocument()
+    expect(screen.getByText('Water reached the second marker.')).toBeInTheDocument()
+    const snapshot = screen.getAllByRole('article')[0]
+    expect(within(snapshot).getByText(/version 2/i)).toBeInTheDocument()
+    expect(screen.getByText(/south bridge/i)).toBeInTheDocument()
+    expect(screen.getByText('urgent')).toHaveClass('tag--manual')
+    expect(screen.getByRole('link', { name: /create new version/i })).toBeInTheDocument()
+  })
+
+  it('renders the same snapshot layout read-only for history', async () => {
+    installApi({ historical: historicalTextMaterial })
+    renderRoute('/materials/material-text/versions/1')
+
+    expect(await screen.findByRole('heading', { name: 'Initial river level' })).toBeInTheDocument()
+    expect(screen.getByText('Water reached the first marker.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/historical version.*read-only/i)
+    expect(screen.queryByRole('link', { name: /create new version/i })).not.toBeInTheDocument()
+  })
+
+  it('hides owner controls when the server denies editing', async () => {
+    installApi({ material: { ...textMaterial, canEdit: false } })
+    renderRoute('/materials/material-text')
+
+    await screen.findByRole('heading', { name: 'River level update' })
+    expect(screen.queryByRole('link', { name: /create new version/i })).not.toBeInTheDocument()
+  })
+
+  it('shows per-image AI results separately, supports retry, and downloads every file type', async () => {
+    const api = installApi({ material: fileMaterial })
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/materials/material-file/versions')) return json([fileMaterial.version])
+      if (url.endsWith('/materials/material-file')) return json(fileMaterial)
+      if (url.endsWith('/files/file-photo/analysis/retry')) return json({ status: 'PENDING', attemptCount: 0, nextAttemptTime: '2026-08-22T15:00:00Z' })
+      if (url.endsWith('/files/file-note/download-url')) return json({ downloadUrl: '/api/v1/local-storage/files/file-note', expiresAt: '2026-08-22T15:00:00Z' })
+      return json({}, 404)
+    })
+    const user = userEvent.setup()
+    renderRoute('/materials/material-file?highlightFile=file-photo')
+
+    const photo = await screen.findByRole('article', { name: /street.jpg/i })
+    expect(photo).toHaveClass('file-card--matched')
+    expect(within(photo).getByText('A flooded street beside brick buildings.')).toBeInTheDocument()
+    expect(within(photo).getByText('flood')).toHaveClass('tag--ai')
+    expect(screen.getByText('field')).toHaveClass('tag--manual')
+    expect(within(photo).getByRole('button', { name: /retry ai analysis/i })).toBeInTheDocument()
+    expect(screen.queryByText(/ai analysis/i, { selector: '[aria-label="notes.txt"] *' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /download notes.txt/i }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(
+      '/api/v1/files/file-note/download-url',
+      expect.objectContaining({ method: 'POST' }),
+    ))
+  })
+})
