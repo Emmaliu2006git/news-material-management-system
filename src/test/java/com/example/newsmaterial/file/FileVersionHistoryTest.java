@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.ActiveProfiles;
@@ -16,7 +17,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.security.MessageDigest;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.HexFormat;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -29,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = NewsMaterialApplication.class)
 @ActiveProfiles("local")
 class FileVersionHistoryTest {
+    @Autowired JdbcTemplate jdbc;
     @Autowired WebApplicationContext context;
     MockMvc mvc;
     @BeforeEach void setUp() { mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build(); }
@@ -66,6 +71,43 @@ class FileVersionHistoryTest {
                         .content("{\"expectedCurrentVersion\":1,\"title\":\"Updated files\",\"textContent\":null,\"files\":[{\"kind\":\"UPLOAD\",\"uploadIntentId\":\"%s\"},{\"kind\":\"EXISTING\",\"fileId\":\"%s\"}]}".formatted(replacement.id(), secondFile)))
                 .andExpect(status().isCreated()).andReturn();
         assertThat(JsonPath.<Integer>read(replay.getResponse().getContentAsString(), "$.version.versionNumber")).isEqualTo(2);
+    }
+
+    @Test void replaysCommittedFileVersionBeforeExpiredIntentValidation() throws Exception {
+        MockHttpSession emma = login("emma");
+        String project = project(emma);
+        Upload original = upload(emma, "original.txt", "original");
+        MvcResult firstVersion = create(emma, project, original.id());
+        String materialId = JsonPath.read(firstVersion.getResponse().getContentAsString(), "$.id");
+        Upload replacement = upload(emma, "replacement.txt", "replacement");
+        String request = "{\"expectedCurrentVersion\":1,\"title\":\"Replacement\",\"textContent\":null,\"files\":[{\"kind\":\"UPLOAD\",\"uploadIntentId\":\"%s\"}]}".formatted(replacement.id());
+
+        MvcResult createdVersion = mvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "expired-file-version-replay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.version.versionNumber").value(2))
+                .andReturn();
+        String createdVersionId = JsonPath.read(createdVersion.getResponse().getContentAsString(), "$.version.id");
+
+        assertThat(jdbc.update("update upload_intents set expires_at = ? where id = ?",
+                Timestamp.from(Instant.EPOCH),
+                UUID.fromString(replacement.id()))).isEqualTo(1);
+
+        MvcResult replay = mvc.perform(post("/api/v1/materials/{id}/versions", materialId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", "expired-file-version-replay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        assertThat(JsonPath.<String>read(replay.getResponse().getContentAsString(), "$.version.id"))
+                .isEqualTo(createdVersionId);
+        assertThat(JsonPath.<Integer>read(replay.getResponse().getContentAsString(), "$.version.versionNumber"))
+                .isEqualTo(2);
     }
 
     @Test void nonOwnerCannotVersionAndCurrentFileFromAnotherMaterialCannotBeAttached() throws Exception {
