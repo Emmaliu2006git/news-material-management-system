@@ -7,3 +7,4 @@ spring:
 app:
   analysis:
     scheduling-enabled: false
+    provider: local

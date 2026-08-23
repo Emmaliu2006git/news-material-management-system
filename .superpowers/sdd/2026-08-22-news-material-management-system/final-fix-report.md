@@ -141,3 +141,13 @@ The following require external infrastructure or a physical device and were not 
 8. Run the organization's Java dependency/container vulnerability scanner; no Java CVE database scanner is configured in this demo repository.
 
 No automated Critical or Important finding remains open. Live services and the real-device checks above are the only outstanding acceptance work.
+
+## Post-fix scoped re-review
+
+The required independent scoped re-review confirmed findings 1 through 8 as addressed and found no new Critical or Important regression in their fix diff. It did reproduce one unresolved Important issue in finding 9: the documented provisioning-only profile inherited the OpenAI provider, but a non-web Spring Boot context has no auto-configured `RestClient.Builder`, so startup stopped before the provisioning runner.
+
+The root cause was profile configuration rather than the provisioning transaction. `application-provision-user.yml` now selects the deterministic local analysis provider while keeping analysis scheduling disabled. This satisfies the inactive worker dependency without contacting OpenAI and does not change the default cloud application's OpenAI provider.
+
+`UserProvisioningProfileTest` starts the complete application with only `provision-user`, an isolated in-memory database, and synthetic credentials. It failed before the change with the same missing-`RestClient.Builder` exception, then passed after the one-line profile correction and created the account.
+
+On the corrected tree, `./scripts/test-all.sh` passed 32/32 frontend tests, 84/84 backend tests, the production build and executable JAR, plus 2/2 packaged-app Playwright journeys (Desktop Chrome and Pixel 7). A separate packaged-JAR run using only `provision-user` exited 0 and printed `Account packaged-profile-smoke: CREATED`.
