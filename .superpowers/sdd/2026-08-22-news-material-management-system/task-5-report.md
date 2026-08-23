@@ -115,3 +115,53 @@ Status: DONE
 - The earlier owner-display concern is resolved by the additive DTO fields.
 
 ### Commit
+- `e25d46d fix: harden frontend security and retries`
+- `def1219 docs: report task 5 review fixes`
+
+---
+
+## Fix Round 2 — DONE
+
+### Delivered
+
+- FILE creation and FILE version workflows now freeze the exact finalization payload and idempotency key after the first finalization request.
+- Ambiguous network and server failures replay that frozen request before consulting client-side upload-intent expiry, without creating new intents or repeating PUT uploads.
+- Definitive uncommitted upload-intent failures clear the frozen finalization and upload session so the next retry safely re-uploads with fresh intents and a new key.
+- The shared current/historical snapshot view now keeps readable names primary and exposes complete secondary material, project, owner, current-version, version-creator, file-uploader, and checksum identifiers in compact accessible system-detail sections.
+- The backend FILE idempotency regression now expires already-consumed intents before replay, proving committed replay is returned before intent validation.
+
+### Files
+
+- Retry state: `frontend/src/materials/NewMaterialPage.tsx`, `VersionEditorPage.tsx`, `formUtils.ts`.
+- Snapshot display: `frontend/src/materials/MaterialSnapshotView.tsx`, `styles.css`.
+- Frontend regressions: `frontend/src/materials/MaterialFormPage.test.tsx`, `App.test.tsx`.
+- Backend replay characterization: `src/test/java/com/example/newsmaterial/file/FileMaterialApiTest.java`.
+
+### TDD RED Evidence
+
+- Focused frontend run: 24 tests executed; 5 failed before implementation.
+- Failures proved that expired lost-finalize retries created a second upload intent for FILE creation and FILE version, definitive expiry did not reset the upload state, and current/historical snapshots lacked the new system-detail regions.
+
+### GREEN / Verification Evidence
+
+- Focused frontend retry/snapshot run: 2 files, 24 tests passed.
+- Focused backend FILE replay run: 3 tests passed.
+- Full frontend unit/integration suite: 3 files, 29 tests passed.
+- Frontend typecheck: passed.
+- Frontend lint: passed with zero warnings.
+- Frontend production build: passed; 52 modules transformed.
+- Full backend suite: 45 tests passed, 0 failures, 0 errors.
+- `git diff --check`: passed with no whitespace errors.
+
+### Self-review
+
+- The logical FILE fingerprint excludes temporary upload-intent IDs and includes ordered local-file identity plus editable snapshot fields.
+- An unchanged lost-finalize retry bypasses both intent-expiry checks and PUT upload logic; changed data receives a new submission identity.
+- Only explicit backend codes for expired, missing, consumed, or unverified intents trigger a reset; network and 5xx failures retain the frozen finalization.
+- FILE version ordering is preserved for mixed existing and newly uploaded files.
+- Current and historical routes still render the same `MaterialSnapshotView`, so their identifier coverage and layout cannot drift.
+- Human-readable project/user values remain in the primary metadata grid; UUIDs and checksums are secondary and wrap safely on small screens.
+
+### Commit
+
+- `aa4324b fix: preserve file finalization retries`
