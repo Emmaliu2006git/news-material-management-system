@@ -152,6 +152,24 @@ describe('authentication shell', () => {
     expect(api).not.toHaveBeenCalledWith('/api/v1/auth/register', expect.anything())
   })
 
+  it('explains the username rules and rejects unsupported special characters before submission', async () => {
+    const api = installApi({ me: null })
+    const actor = userEvent.setup()
+    renderRoute('/register')
+
+    expect(await screen.findByText(/allowed:.*letters.*numbers.*dots.*underscores.*hyphens/i)).toBeInTheDocument()
+    expect(screen.getByText(/not allowed:.*spaces.*other special characters/i)).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/^username/i), 'News@Desk')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'strong-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /username.*letters.*numbers.*dots.*underscores.*hyphens.*spaces.*special characters.*not allowed/i,
+    )
+    expect(api).not.toHaveBeenCalledWith('/api/v1/auth/register', expect.anything())
+  })
+
   it('opens the signed-in profile and changes the password', async () => {
     const api = installApi()
     api.mockImplementation((input) => {

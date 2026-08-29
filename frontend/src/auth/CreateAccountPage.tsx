@@ -4,10 +4,14 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from './AuthContext'
 
+const USERNAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
+const USERNAME_ERROR = 'Username must be 3–32 characters, start and end with a letter or number, and use only letters, numbers, dots, underscores, or hyphens. Spaces and other special characters are not allowed.'
+
 export function CreateAccountPage() {
   const { user, loading, register } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+  const [usernameError, setUsernameError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   if (loading) return <main className="auth-page"><p role="status">Restoring your session…</p></main>
@@ -16,10 +20,19 @@ export function CreateAccountPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+    setUsernameError('')
     const data = new FormData(event.currentTarget)
     const username = String(data.get('username'))
     const password = String(data.get('password'))
     const confirmation = String(data.get('passwordConfirmation'))
+    if (username.length < 3 || username.length > 32 || !USERNAME_PATTERN.test(username)) {
+      setUsernameError(USERNAME_ERROR)
+      return
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
     if (password !== confirmation) {
       setError('Passwords do not match.')
       return
@@ -42,7 +55,7 @@ export function CreateAccountPage() {
         <h1 id="register-heading">Create your account</h1>
         <p className="lede">Use one account to add, manage, and trace reporting materials.</p>
         {error && <div role="alert" className="inline-message inline-message--error">{error}</div>}
-        <form onSubmit={submit} className="stack-form">
+        <form onSubmit={submit} className="stack-form" noValidate>
           <label>
             <span>Username</span>
             <input
@@ -50,10 +63,16 @@ export function CreateAccountPage() {
               autoComplete="username"
               minLength={3}
               maxLength={32}
-              pattern="[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?"
+              aria-describedby={usernameError ? 'username-guidance username-error' : 'username-guidance'}
+              aria-invalid={Boolean(usernameError)}
+              onChange={() => setUsernameError('')}
               required
             />
-            <small>3–32 lowercase letters, numbers, dots, underscores, or hyphens.</small>
+            <small id="username-guidance">
+              Allowed: 3–32 letters (A–Z and a–z), numbers, dots, underscores, and hyphens.
+              {' '}Not allowed: spaces or other special characters. Start and end with a letter or number.
+            </small>
+            {usernameError && <small id="username-error" className="field-error" role="alert">{usernameError}</small>}
           </label>
           <label>
             <span>Password</span>

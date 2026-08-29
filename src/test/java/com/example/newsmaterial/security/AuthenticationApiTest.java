@@ -123,6 +123,37 @@ class AuthenticationApiTest {
     }
 
     @Test
+    void registrationAcceptsUppercaseLettersAndPreservesTheUsernameForLogin() throws Exception {
+        String username = uniqueUsername("Emma");
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"strong-password\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.username").value(username));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"" + username + "\",\"password\":\"strong-password\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value(username));
+    }
+
+    @Test
+    void registrationExplainsWhichUsernameCharactersAreNotAllowed() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"News@Desk\",\"password\":\"strong-password\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details[0]").value(
+                        "username: Use letters, numbers, dots, underscores, or hyphens; "
+                                + "spaces and other special characters are not allowed"));
+    }
+
+    @Test
     void registrationRejectsAnExistingUsername() throws Exception {
         mockMvc.perform(post("/api/v1/auth/register")
                         .with(csrf())

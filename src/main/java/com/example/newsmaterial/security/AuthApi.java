@@ -118,8 +118,9 @@ public class AuthApi {
             @NotBlank
             @Size(min = 3, max = 32)
             @Pattern(
-                    regexp = "[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?",
-                    message = "Use lowercase letters, numbers, dots, underscores, or hyphens")
+                    regexp = "[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?",
+                    message = "Use letters, numbers, dots, underscores, or hyphens; "
+                            + "spaces and other special characters are not allowed")
             String username,
             @NotBlank @Size(min = 8, max = 72) String password) {
     }
