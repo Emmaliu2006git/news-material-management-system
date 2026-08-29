@@ -84,6 +84,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  register: (username: string, password: string) =>
+    apiRequest<User>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }, true),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiRequest<void>('/api/v1/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }, true),
   logout: () => apiRequest<void>('/api/v1/auth/logout', { method: 'POST' }, true),
   capabilities: () => apiRequest<Capabilities>('/api/v1/capabilities'),
   listProjects: () => apiRequest<Project[]>('/api/v1/projects'),

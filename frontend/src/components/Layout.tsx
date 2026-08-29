@@ -38,7 +38,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const navigation = (
     <nav id="primary-navigation" aria-label="Primary" className="primary-nav">
       <Link to="/projects">Projects</Link>
-      <span className="user-chip" title="Signed-in user">{user?.username}</span>
+      <Link
+        className="user-chip"
+        to="/profile"
+        aria-label={`Profile for ${user?.username ?? 'user'}`}
+        title="Signed-in user"
+      >
+        {user?.username}
+      </Link>
       <button className="button button--quiet" type="button" onClick={endSession}>Log out</button>
     </nav>
   )

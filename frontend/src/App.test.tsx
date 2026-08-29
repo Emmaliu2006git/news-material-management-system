@@ -103,6 +103,108 @@ describe('authentication shell', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
   })
+
+  it('creates an account from the login page and starts an authenticated session', async () => {
+    const api = installApi({ me: null })
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/me')) {
+        return json({ code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required', requestId: 'req', details: [] }, 401)
+      }
+      if (url.endsWith('/auth/register')) {
+        return json({ id: 'user-new-reporter', username: 'new-reporter' }, 201)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/login')
+
+    await actor.click(await screen.findByRole('link', { name: /create account/i }))
+    expect(screen.getByRole('heading', { name: /create your account/i })).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/^username/i), 'new-reporter')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'strong-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('heading', { name: /reporting projects/i })).toBeInTheDocument()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/auth/register',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ username: 'new-reporter', password: 'strong-password' }),
+      }),
+    )
+  })
+
+  it('does not submit registration when password confirmation differs', async () => {
+    const api = installApi({ me: null })
+    const actor = userEvent.setup()
+    renderRoute('/register')
+
+    await actor.type(await screen.findByLabelText(/^username/i), 'new-reporter')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'different-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/passwords do not match/i)
+    expect(api).not.toHaveBeenCalledWith('/api/v1/auth/register', expect.anything())
+  })
+
+  it('opens the signed-in profile and changes the password', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/password')) return Promise.resolve(new Response(null, { status: 204 }))
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/projects')
+
+    await actor.click(await screen.findByRole('link', { name: /profile for emma/i }))
+    expect(screen.getByRole('heading', { name: /your profile/i })).toBeInTheDocument()
+    expect(screen.getByText('emma')).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/current password/i), 'demo-password')
+    await actor.type(screen.getByLabelText(/^new password/i), 'updated-password')
+    await actor.type(screen.getByLabelText(/confirm new password/i), 'updated-password')
+    await actor.click(screen.getByRole('button', { name: /update password/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/password updated/i)
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/auth/password',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: 'demo-password', newPassword: 'updated-password' }),
+      }),
+    )
+  })
+
+  it('shows the server error when the current password is incorrect', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/password')) {
+        return json({ code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect', requestId: 'req', details: [] }, 400)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/profile')
+
+    await actor.type(await screen.findByLabelText(/current password/i), 'wrong-password')
+    await actor.type(screen.getByLabelText(/^new password/i), 'updated-password')
+    await actor.type(screen.getByLabelText(/confirm new password/i), 'updated-password')
+    await actor.click(screen.getByRole('button', { name: /update password/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/current password is incorrect/i)
+  })
 })
 
 describe('projects and current-only search', () => {
