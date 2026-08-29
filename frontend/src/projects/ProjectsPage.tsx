@@ -68,14 +68,21 @@ export function ProjectsPage() {
           {projects.length === 0 ? <PageState>No projects yet. Create the first one above.</PageState> : (
             <div className="card-grid">
               {projects.map((project) => (
-                <article className="project-card" key={project.id}>
+                <Link
+                  aria-label={`Open project ${project.title}`}
+                  className="project-card"
+                  key={project.id}
+                  to={`/projects/${project.id}`}
+                >
                   <div className="project-card__icon" aria-hidden="true">PR</div>
                   <div>
-                    <h3><Link to={`/projects/${project.id}`}>{project.title}</Link></h3>
+                    <h3>{project.title}</h3>
                     <p>Created by {project.creatorUsername}</p>
                   </div>
-                  <span className="card-arrow" aria-hidden="true">→</span>
-                </article>
+                  <span className="project-card__action" aria-hidden="true">
+                    Open project <span className="card-arrow">→</span>
+                  </span>
+                </Link>
               ))}
             </div>
           )}

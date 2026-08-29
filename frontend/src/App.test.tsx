@@ -121,10 +121,16 @@ describe('projects and current-only search', () => {
     const user = userEvent.setup()
     renderRoute('/projects')
 
-    expect(await screen.findByRole('link', { name: 'Downtown flood' })).toBeInTheDocument()
+    const existingProjectLink = await screen.findByRole('link', { name: 'Open project Downtown flood' })
+    expect(existingProjectLink).toHaveAttribute('href', '/projects/project-flood')
+    expect(existingProjectLink).toHaveClass('project-card')
+
     await user.type(screen.getByLabelText(/new project title/i), 'Warehouse fire')
     await user.click(screen.getByRole('button', { name: /create project/i }))
-    expect(await screen.findByRole('link', { name: 'Warehouse fire' })).toBeInTheDocument()
+
+    const createdProjectLink = await screen.findByRole('link', { name: 'Open project Warehouse fire' })
+    expect(createdProjectLink).toHaveAttribute('href', '/projects/project-fire')
+    expect(createdProjectLink).toHaveClass('project-card')
   })
 
   it('submits current-version filters and marks an AI image match', async () => {
