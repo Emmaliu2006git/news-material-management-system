@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { FileMaterialInput, MaterialType, Project, TextMaterialInput, UploadPolicy } from '../api/types'
+import { EnglishDateInput } from '../components/EnglishDateInput'
 import {
   createUploadSession,
   eventTime,
@@ -83,15 +84,15 @@ export function NewMaterialPage() {
       }
     }
     setSubmitting(true)
-    const data = new FormData(event.currentTarget)
-    const common = {
-      projectId,
-      title: String(data.get('title')).trim(),
-      eventTime: eventTime(data.get('eventTime')),
-      location: optional(data.get('location')),
-      manualTags: tags(data.get('manualTags')),
-    }
     try {
+      const data = new FormData(event.currentTarget)
+      const common = {
+        projectId,
+        title: String(data.get('title')).trim(),
+        eventTime: eventTime(data.get('eventTime')),
+        location: optional(data.get('location')),
+        manualTags: tags(data.get('manualTags')),
+      }
       let created
       if (type === 'TEXT') {
         const payload: TextMaterialInput = {
@@ -180,7 +181,7 @@ export function NewMaterialPage() {
         </fieldset>
         <div className="form-grid">
           <label className="form-grid__wide"><span>Title <b aria-label="required">*</b></span><input name="title" required maxLength={240} /></label>
-          <label><span>Event time <small>optional</small></span><input name="eventTime" type="datetime-local" /></label>
+          <label><span>Event time <small>optional</small></span><EnglishDateInput name="eventTime" withTime /></label>
           <label><span>Location <small>optional</small></span><input name="location" /></label>
           <label className="form-grid__wide"><span>Manual tags <small>optional, comma-separated</small></span><input name="manualTags" /></label>
           {type === 'TEXT' ? (

@@ -70,6 +70,10 @@ describe('new material', () => {
 
     await actor.click(await screen.findByRole('radio', { name: /text material/i }))
     await actor.type(screen.getByLabelText(/^title/i), 'River level update')
+    const eventTimeInput = screen.getByLabelText(/event time/i)
+    expect(eventTimeInput).toHaveAttribute('type', 'text')
+    expect(eventTimeInput).toHaveAttribute('placeholder', 'MM/DD/YYYY HH:MM')
+    await actor.type(eventTimeInput, '08/22/2026 06:30')
     await actor.type(screen.getByLabelText(/text body/i), 'Water reached the second marker.')
     await actor.type(screen.getByLabelText(/location/i), 'South bridge')
     await actor.type(screen.getByLabelText(/manual tags/i), 'urgent, river')
@@ -79,11 +83,19 @@ describe('new material', () => {
     expect(payload).toEqual({
       projectId: 'project-flood',
       title: 'River level update',
-      eventTime: null,
+      eventTime: expect.stringMatching(/Z$/),
       location: 'South bridge',
       manualTags: ['urgent', 'river'],
       textBody: 'Water reached the second marker.',
     })
+    const savedEventTime = new Date(String(payload?.eventTime))
+    expect([
+      savedEventTime.getFullYear(),
+      savedEventTime.getMonth() + 1,
+      savedEventTime.getDate(),
+      savedEventTime.getHours(),
+      savedEventTime.getMinutes(),
+    ]).toEqual([2026, 8, 22, 6, 30])
   })
 
   it('replays a lost TEXT finalization with the same payload and idempotency key', async () => {
@@ -574,6 +586,10 @@ describe('owner version editor', () => {
     renderRoute('/materials/material-text/edit')
 
     await actor.clear(await screen.findByLabelText(/text body/i))
+    const eventTimeInput = screen.getByLabelText(/event time/i) as HTMLInputElement
+    expect(eventTimeInput).toHaveAttribute('type', 'text')
+    expect(eventTimeInput).toHaveAttribute('placeholder', 'MM/DD/YYYY HH:MM')
+    expect(eventTimeInput.value).toMatch(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/)
     await actor.type(screen.getByLabelText(/text body/i), 'A revised observation.')
     await actor.click(screen.getByRole('button', { name: /save new version/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/newer version.*reload/i)

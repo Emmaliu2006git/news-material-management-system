@@ -3,13 +3,9 @@ import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { Project, SearchFilters, SearchResult } from '../api/types'
+import { EnglishDateInput } from '../components/EnglishDateInput'
 import { PageState, TagList } from '../components/Layout'
-
-function dateBoundary(value: FormDataEntryValue | null, endOfDay = false) {
-  const date = String(value ?? '')
-  if (!date) return undefined
-  return new Date(`${date}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`).toISOString()
-}
+import { englishDateBoundary } from '../dateTime'
 
 export function ProjectDetailPage() {
   const { id = '' } = useParams()
@@ -41,18 +37,23 @@ export function ProjectDetailPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    await search({
-      q: String(data.get('q') ?? ''),
-      materialType: (String(data.get('materialType') ?? '') || undefined) as SearchFilters['materialType'],
-      ownerId: String(data.get('ownerId') ?? ''),
-      createdFrom: dateBoundary(data.get('createdFrom')),
-      createdTo: dateBoundary(data.get('createdTo'), true),
-      eventFrom: dateBoundary(data.get('eventFrom')),
-      eventTo: dateBoundary(data.get('eventTo'), true),
-      location: String(data.get('location') ?? ''),
-      tag: String(data.get('tag') ?? ''),
-    })
+    setError('')
+    try {
+      const data = new FormData(event.currentTarget)
+      await search({
+        q: String(data.get('q') ?? ''),
+        materialType: (String(data.get('materialType') ?? '') || undefined) as SearchFilters['materialType'],
+        ownerId: String(data.get('ownerId') ?? ''),
+        createdFrom: englishDateBoundary(data.get('createdFrom'), 'Material created from'),
+        createdTo: englishDateBoundary(data.get('createdTo'), 'Material created to', true),
+        eventFrom: englishDateBoundary(data.get('eventFrom'), 'Event time from'),
+        eventTo: englishDateBoundary(data.get('eventTo'), 'Event time to', true),
+        location: String(data.get('location') ?? ''),
+        tag: String(data.get('tag') ?? ''),
+      })
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Enter dates as MM/DD/YYYY.')
+    }
   }
 
   const owners = Array.from(new Map(
@@ -96,19 +97,19 @@ export function ProjectDetailPage() {
         </label>
         <label>
           <span>Material created from</span>
-          <input name="createdFrom" type="date" />
+          <EnglishDateInput name="createdFrom" />
         </label>
         <label>
           <span>Material created to</span>
-          <input name="createdTo" type="date" />
+          <EnglishDateInput name="createdTo" />
         </label>
         <label>
           <span>Event time from</span>
-          <input name="eventFrom" type="date" />
+          <EnglishDateInput name="eventFrom" />
         </label>
         <label>
           <span>Event time to</span>
-          <input name="eventTo" type="date" />
+          <EnglishDateInput name="eventTo" />
         </label>
         <label>
           <span>Location</span>

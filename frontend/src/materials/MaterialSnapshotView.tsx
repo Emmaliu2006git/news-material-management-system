@@ -2,13 +2,7 @@ import { useState } from 'react'
 import { api, ApiError } from '../api/client'
 import type { FileAsset, Material } from '../api/types'
 import { TagList } from '../components/Layout'
-
-function dateTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
+import { formatEnglishDateTime } from '../dateTime'
 
 function bytes(value: number) {
   if (value < 1024) return `${value} B`
@@ -73,7 +67,7 @@ function FileCard({
         <div><dt>Uploader</dt><dd>{file.uploaderUsername}</dd></div>
         <div><dt>MIME type</dt><dd>{file.mimeType}</dd></div>
         <div><dt>File size</dt><dd>{bytes(file.sizeBytes)}</dd></div>
-        <div><dt>Uploaded</dt><dd>{dateTime(file.fileCreatedTime)}</dd></div>
+        <div><dt>Uploaded</dt><dd>{formatEnglishDateTime(file.fileCreatedTime)}</dd></div>
       </dl>
       <section className="file-system-details" aria-labelledby={`file-system-details-${file.id}`}>
         <h4 id={`file-system-details-${file.id}`}>File system details</h4>
@@ -93,7 +87,7 @@ function FileCard({
           <TagList tags={file.imageAnalysis.aiTags} kind="ai" />
           {file.imageAnalysis.generatedTime && (
             <p className="analysis-generated">
-              Generated {dateTime(file.imageAnalysis.generatedTime)}
+              Generated {formatEnglishDateTime(file.imageAnalysis.generatedTime)}
             </p>
           )}
           {canEdit && analysisStatus === 'FAILED' && (
@@ -131,12 +125,12 @@ export function MaterialSnapshotView({
       <dl className="metadata-grid">
         <div><dt>Reporting project</dt><dd>{material.projectTitle}</dd></div>
         <div><dt>Owner</dt><dd>{material.ownerUsername}</dd></div>
-        <div><dt>Material created</dt><dd>{dateTime(material.materialCreatedTime)}</dd></div>
+        <div><dt>Material created</dt><dd>{formatEnglishDateTime(material.materialCreatedTime)}</dd></div>
         <div><dt>Material type</dt><dd>{content.kind === 'TEXT' ? 'Text' : 'File'}</dd></div>
         <div><dt>Version number</dt><dd>{material.version.versionNumber}</dd></div>
         <div><dt>Version creator</dt><dd>{material.version.creatorUsername}</dd></div>
-        <div><dt>Version created</dt><dd>{dateTime(material.version.versionCreatedTime)}</dd></div>
-        {snapshot.eventTime && <div><dt>Event time</dt><dd>{dateTime(snapshot.eventTime)}</dd></div>}
+        <div><dt>Version created</dt><dd>{formatEnglishDateTime(material.version.versionCreatedTime)}</dd></div>
+        {snapshot.eventTime && <div><dt>Event time</dt><dd>{formatEnglishDateTime(snapshot.eventTime)}</dd></div>}
         {snapshot.location && <div><dt>Location</dt><dd>{snapshot.location}</dd></div>}
       </dl>
       <section className="snapshot__section system-details" aria-labelledby="system-details-heading">

@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { Material, VersionSummary } from '../api/types'
 import { PageState } from '../components/Layout'
+import { formatEnglishDate } from '../dateTime'
 import { MaterialSnapshotView } from './MaterialSnapshotView'
 
 export function MaterialPage() {
@@ -59,7 +60,7 @@ export function MaterialPage() {
                   <Link to={current ? `/materials/${material.id}` : `/materials/${material.id}/versions/${version.versionNumber}`}>
                     <strong>Version {version.versionNumber}</strong>
                     <span>{version.title}</span>
-                    <time dateTime={version.versionCreatedTime}>{new Date(version.versionCreatedTime).toLocaleDateString()}</time>
+                    <time dateTime={version.versionCreatedTime}>{formatEnglishDate(version.versionCreatedTime)}</time>
                   </Link>
                 </li>
               )

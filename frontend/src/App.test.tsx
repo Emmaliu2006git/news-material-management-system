@@ -220,10 +220,17 @@ describe('projects and current-only search', () => {
     await actor.selectOptions(screen.getByLabelText(/material type/i), 'FILE')
     await actor.type(screen.getByLabelText(/^location$/i), 'East entrance')
     await actor.type(screen.getByLabelText(/^tag$/i), 'field')
-    await actor.type(screen.getByLabelText(/material created from/i), '2026-08-01')
-    await actor.type(screen.getByLabelText(/material created to/i), '2026-08-02')
-    await actor.type(screen.getByLabelText(/event time from/i), '2026-08-03')
-    await actor.type(screen.getByLabelText(/event time to/i), '2026-08-04')
+    const dateFilters = [
+      [screen.getByLabelText(/material created from/i), '08/01/2026'],
+      [screen.getByLabelText(/material created to/i), '08/02/2026'],
+      [screen.getByLabelText(/event time from/i), '08/03/2026'],
+      [screen.getByLabelText(/event time to/i), '08/04/2026'],
+    ] as const
+    for (const [input, value] of dateFilters) {
+      expect(input).toHaveAttribute('type', 'text')
+      expect(input).toHaveAttribute('placeholder', 'MM/DD/YYYY')
+      await actor.type(input, value)
+    }
     await actor.click(screen.getByRole('button', { name: /^search$/i }))
 
     const query = new URL(requests.at(-1)!, 'http://localhost').searchParams
@@ -251,6 +258,7 @@ describe('material snapshots and permissions', () => {
     const snapshot = screen.getAllByRole('article')[0]
     expect(within(snapshot).getByText(/version 2/i)).toBeInTheDocument()
     expect(screen.getByText(/south bridge/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/Aug 22, 2026/i).length).toBeGreaterThan(0)
     expect(screen.getByText('urgent')).toHaveClass('tag--manual')
     expect(screen.getByRole('link', { name: /create new version/i })).toBeInTheDocument()
   })

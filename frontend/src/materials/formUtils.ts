@@ -1,5 +1,6 @@
 import { api, ApiError, putFile, sha256 } from '../api/client'
 import type { UploadIntent, UploadPolicy } from '../api/types'
+import { parseEnglishDateTime } from '../dateTime'
 
 export function tags(value: FormDataEntryValue | null) {
   return String(value ?? '')
@@ -14,8 +15,7 @@ export function optional(value: FormDataEntryValue | null) {
 }
 
 export function eventTime(value: FormDataEntryValue | null) {
-  const raw = optional(value)
-  return raw ? new Date(raw).toISOString() : null
+  return parseEnglishDateTime(value)
 }
 
 export function idempotencyKey() {

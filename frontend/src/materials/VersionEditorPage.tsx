@@ -3,7 +3,9 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { FileAsset, FileSelection, Material, UploadPolicy, VersionInput } from '../api/types'
+import { EnglishDateInput } from '../components/EnglishDateInput'
 import { PageState } from '../components/Layout'
+import { formatEnglishDateTimeInput } from '../dateTime'
 import {
   createUploadSession,
   eventTime,
@@ -23,11 +25,6 @@ type OrderedFile =
   | { key: string; kind: 'EXISTING'; asset: FileAsset }
   | { key: string; kind: 'UPLOAD'; file: File; progress: UploadProgress }
 
-function localDateTime(value: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-}
 
 export function VersionEditorPage() {
   const { id = '' } = useParams()
@@ -127,15 +124,15 @@ export function VersionEditorPage() {
       }
     }
     setSubmitting(true)
-    const data = new FormData(event.currentTarget)
-    const common = {
-      expectedCurrentVersion: material.version.versionNumber,
-      title: String(data.get('title')).trim(),
-      eventTime: eventTime(data.get('eventTime')),
-      location: optional(data.get('location')),
-      manualTags: tags(data.get('manualTags')),
-    }
     try {
+      const data = new FormData(event.currentTarget)
+      const common = {
+        expectedCurrentVersion: material.version.versionNumber,
+        title: String(data.get('title')).trim(),
+        eventTime: eventTime(data.get('eventTime')),
+        location: optional(data.get('location')),
+        manualTags: tags(data.get('manualTags')),
+      }
       let attempt: SubmissionAttempt
       if (material.type === 'TEXT') {
         const payload: VersionInput = { ...common, textBody: String(data.get('textBody')).trim() }
@@ -227,7 +224,7 @@ export function VersionEditorPage() {
       <form className="panel material-form" onSubmit={submit}>
         <div className="form-grid">
           <label className="form-grid__wide"><span>Title <b aria-label="required">*</b></span><input name="title" required defaultValue={snapshot.title} /></label>
-          <label><span>Event time <small>optional</small></span><input name="eventTime" type="datetime-local" defaultValue={localDateTime(snapshot.eventTime)} /></label>
+          <label><span>Event time <small>optional</small></span><EnglishDateInput name="eventTime" withTime defaultValue={formatEnglishDateTimeInput(snapshot.eventTime)} /></label>
           <label><span>Location <small>optional</small></span><input name="location" defaultValue={snapshot.location ?? ''} /></label>
           <label className="form-grid__wide"><span>Manual tags <small>optional, comma-separated</small></span><input name="manualTags" defaultValue={snapshot.manualTags.join(', ')} /></label>
           {content.kind === 'TEXT' ? (
