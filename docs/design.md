@@ -6,7 +6,7 @@
 | Author / DRI | [owner needed] |
 | Decision owner | [owner needed] |
 | Reviewers | Mentor; additional reviewers [owner needed] |
-| Last updated | 2026-08-22 |
+| Last updated | 2026-08-29 |
 | Decision deadline | Before implementation begins [date needed] |
 
 ## 1. Executive Summary
@@ -29,7 +29,7 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 
 - Organize TEXT and FILE materials under shared reporting projects.
 - Let every authenticated user view all materials and add independently owned materials.
-- Support mobile and desktop browser upload, viewing, download, and search.
+- Support mobile and desktop browser upload, viewing, download, and cross-project search.
 - Preserve immutable, owner-only, full-snapshot versions.
 - Search only each material's current version.
 - Associate AI metadata with the exact image FileAsset that produced it.
@@ -43,7 +43,7 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 | FILE flow | User uploads multiple files directly to S3 and reopens the FILE material |
 | Ownership | Automated tests show zero successful non-owner writes |
 | History | Creating N+1 leaves N and its file set unchanged |
-| Search | Current text matches; text existing only in history does not |
+| Search | Global comma-separated keywords use OR substring matching; results with more distinct matched terms rank first; text existing only in history does not match |
 | AI isolation | Material remains usable when image analysis fails |
 | Mobile | Upload succeeds in a supported real mobile browser |
 | Delivery | Demo within one week; agreed scope within two weeks |
@@ -60,10 +60,13 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 6. TEXT requires a non-empty text body and has no files.
 7. FILE requires at least one file and may contain user-authored text.
 8. Current and historical versions use the same layout; history is labeled and read-only.
-9. Search returns one result per material and considers only the current version.
-10. Each image has its own AI status, description, and tag list.
-11. AI processing starts after the material transaction commits.
-12. File download requires authorization and a pre-signed GET URL.
+9. Project detail displays the current version of every material in that project without requiring a search.
+10. Global search returns one result per material and considers only the current version.
+11. Global keyword input accepts comma-separated terms, uses case-insensitive substring OR matching, and ranks by the count of distinct matched terms.
+12. Global filters are limited to event-time range, location, and file category (`All`, `Text`, `Image`, `Video`, `Audio`, or `Other file`).
+13. Each image has its own AI status, description, and tag list.
+14. AI processing starts after the material transaction commits.
+15. File download requires authorization and a pre-signed GET URL.
 
 ### Non-functional Requirements
 
@@ -83,7 +86,7 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 | All authenticated users may create projects | Working assumption | Confirm with mentor | Before project API |
 | Project creator may rename; no deletion | Working assumption | Confirm with mentor | Before project API |
 | AI is generated once and not editable | Working assumption | Confirm AI lifecycle | Before AI work |
-| Search language behavior is unknown | Evidence gap | Test representative queries | Before search sign-off |
+| Search language behavior | Resolved | Comma-separated OR, case-insensitive substring matching, no typo correction; automated API/UI tests | Implemented |
 
 ## 5. Architecture Decision
 
@@ -352,13 +355,15 @@ A committed image FileAsset receives a `PENDING` ImageAnalysis row. A scheduled 
 
 The OpenAI Responses API supports image input analysis. [OpenAI Images and Vision](https://developers.openai.com/api/docs/guides/images-vision)
 
-Search indexes only current versions. Material-level rows contain title, text body or file text, manual tags, and location. File-level rows contain AI description and AI tags. Each row stores material ID, current version ID, optional file ID, source type, and content. Queries join against `Material.currentVersionId`, preventing stale historical matches. AI matches return `matchedFileId` so the UI can highlight the image.
+Search indexes only current versions. Material-level rows contain title, text body or file text, manual tags, and location for the backward-compatible project endpoint. File-level rows contain AI description and AI tags. Global search constructs its keyword corpus from title, text, and tags while deliberately excluding location, which remains a separate global filter. Each row stores material ID, current version ID, optional file ID, source type, and content. Queries join against `Material.currentVersionId`, preventing stale historical matches. AI matches return `matchedFileId` so the UI can highlight the image.
 
-Filters include project, material type, owner, created-time range, event-time range, location, and manual tags. PostgreSQL `pg_trgm` supports similarity and indexed `LIKE`/`ILIKE`. [PostgreSQL pg_trgm](https://www.postgresql.org/docs/17/pgtrgm.html)
+The global keyword box splits on commas, trims and de-duplicates terms, then performs case-insensitive substring matching across the current material and image-AI documents. A material is returned when any term matches. Its relevance score is the number of distinct terms that matched anywhere in its current documents; repeated occurrences of one term do not increase the score. Results sort by relevance descending, then event time descending with null event times last, then material creation time descending.
+
+Global filters are event-time range, case-insensitive location substring, and a file-category dropdown. `Text` means a TEXT material. For FILE materials, `Image`, `Video`, `Audio`, and `Other file` inspect the MIME types of files in the current version; a multi-file material matches when any current file belongs to the selected category. Substring search is intentionally not typo correction or semantic/vector search.
 
 ## 12. Frontend and API
 
-Pages include login, project list/detail, new material, current material, owner edit, version timeline, and historical version. Current and historical views share `MaterialSnapshotView`; historical mode adds a read-only banner and disables editing. TEXT and FILE use type-specific content renderers.
+Pages include login, project list/detail, global material search, new material, current material, owner edit, version timeline, and historical version. Project detail immediately lists current materials; it does not contain the global filter form. The global Search page is available from primary navigation and searches across all projects. Current and historical views share `MaterialSnapshotView`; historical mode adds a read-only banner and disables editing. TEXT and FILE use type-specific content renderers.
 
 Core `/api/v1` endpoints:
 
@@ -367,7 +372,8 @@ Core `/api/v1` endpoints:
 | `POST /auth/login` | Start session | Public |
 | `GET /capabilities` | Active upload count/size/total limits | Authenticated |
 | `GET/POST /projects` | List/create projects | Authenticated |
-| `GET /projects/{id}/materials` | Current search and filters | Authenticated |
+| `GET /projects/{id}/materials` | List current materials in one project | Authenticated |
+| `GET /materials/search` | Ranked current-material search across projects | Authenticated |
 | `POST /uploads/intents` | Create upload URLs | Authenticated |
 | `POST /materials/text` | Create TEXT and v1 | Authenticated |
 | `POST /materials/file` | Create FILE and v1 | Authenticated |
@@ -424,7 +430,6 @@ Migrations remain expand-only during development. Initial scope contains no irre
 | AI provider/privacy | OpenAI with synthetic demo images until approved | Before AI work |
 | AI retry and re-analysis | Three retries; no re-analysis initially | Before AI worker |
 | Material/version deletion | No delete initially | Before retention work |
-| Search language quality | Substring plus trigram; validate real queries | Before search sign-off |
 | Malware risk | Restrict demo users and formats | Before external use |
 | Deployment/PostgreSQL provider | Decide after local vertical slice; retain portability | Before hosted demo |
 
@@ -436,9 +441,11 @@ Migrations remain expand-only during development. Initial scope contains no irre
 | Owner-only linear version history | Traceability without merge complexity |
 | Complete read-only historical snapshots | Consistent audit and UI behavior |
 | Current-version-only global search | Avoids duplicate and obsolete results |
+| Comma-separated OR keyword matching | Broad discovery while keeping the input simple |
+| Rank by distinct matched terms, then event time | Put stronger matches first without rewarding repeated text |
+| Search outside project detail | Project pages remain browsable while one global form searches all projects |
 | ImageAnalysis belongs to image FileAsset | Preserves per-image association |
 | React + Spring Boot + PostgreSQL + S3 | Aligns with mentor architecture |
 | No Kafka | No initial workflow justifies a broker |
 
-**Review verdict: Ready with named open decisions.** Architecture, ownership, version invariants, upload flow, search boundary, AI isolation, security, testing, and rollout are coherent. Project permissions, file limits, AI/privacy rules, search-language validation, and hosting must be resolved at their named gates.
-
+**Review verdict: Ready with named open decisions.** Architecture, ownership, version invariants, upload flow, search boundary, AI isolation, security, testing, and rollout are coherent. Project permissions, file limits, AI/privacy rules, and hosting must be resolved at their named gates.

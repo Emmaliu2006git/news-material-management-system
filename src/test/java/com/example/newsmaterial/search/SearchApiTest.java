@@ -79,6 +79,13 @@ class SearchApiTest {
         assertThat(JsonPath.<List<Integer>>read(current.getResponse().getContentAsString(), "$[*].currentVersionNumber"))
                 .contains(2, 1);
 
+        MvcResult legacyLocationKeyword = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
+                        .session(emma).param("q", "downtown"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<String>>read(
+                legacyLocationKeyword.getResponse().getContentAsString(), "$[*].id"))
+                .containsExactly(firstMaterialId);
+
         MvcResult filtered = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
                         .session(emma)
                         .param("q", "river")
@@ -124,8 +131,10 @@ class SearchApiTest {
         }
         assertThat(analyses.findById(analysis.getId()).orElseThrow().getStatus()).isEqualTo(ImageAnalysisStatus.COMPLETED);
 
-        MvcResult result = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
-                        .session(emma).param("q", "demo-analysis"))
+        String imageFingerprint = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest("street-image".getBytes())).substring(0, 12);
+        MvcResult result = mvc.perform(get("/api/v1/materials/search")
+                        .session(emma).param("q", imageFingerprint))
                 .andExpect(status().isOk()).andReturn();
         assertThat(JsonPath.<List<String>>read(result.getResponse().getContentAsString(), "$[*].id"))
                 .containsExactly(materialId);
@@ -140,8 +149,8 @@ class SearchApiTest {
                                 "{\"kind\":\"EXISTING\",\"fileId\":\"" + noteFileId + "\"}]}"))
                 .andExpect(status().isCreated());
 
-        MvcResult historicalAi = mvc.perform(get("/api/v1/projects/{id}/materials", projectId)
-                        .session(emma).param("q", "demo-analysis"))
+        MvcResult historicalAi = mvc.perform(get("/api/v1/materials/search")
+                        .session(emma).param("q", imageFingerprint))
                 .andExpect(status().isOk()).andReturn();
         assertThat(JsonPath.<List<Object>>read(
                 historicalAi.getResponse().getContentAsString(), "$")).isEmpty();
@@ -179,6 +188,82 @@ class SearchApiTest {
                 tag.getResponse().getContentAsString(), "$[*].id")).containsExactly(specialId);
     }
 
+    @Test
+    void globalSearchUsesCommaSeparatedOrTermsAndRanksByDistinctMatches() throws Exception {
+        MockHttpSession emma = login("emma");
+        String firstProjectId = project(emma, "River desk");
+        String secondProjectId = project(emma, "Transit desk");
+
+        String twoMatches = createText(emma, firstProjectId,
+                "Rankflood8471 field report", "The rankbridge8471 remains closed",
+                "2026-08-20T10:00:00Z", "Riverside", List.of("rankflood8471"), "global-rank-two");
+        String twoMatchesId = JsonPath.read(twoMatches, "$.id");
+        String oneMatch = createText(emma, secondProjectId,
+                "Rankflood8471 traffic update", "Alternate roads are open",
+                "2026-08-29T10:00:00Z", "Uptown", List.of(), "global-rank-one");
+        String oneMatchId = JsonPath.read(oneMatch, "$.id");
+
+        MvcResult result = mvc.perform(get("/api/v1/materials/search")
+                        .session(emma).param("q", "rankflood8471, rankbridge8471, RANKFLOOD8471"))
+                .andExpect(status().isOk()).andReturn();
+
+        String json = result.getResponse().getContentAsString();
+        assertThat(JsonPath.<List<String>>read(json, "$[*].id"))
+                .containsExactly(twoMatchesId, oneMatchId);
+        assertThat(JsonPath.<List<Integer>>read(json, "$[*].matchedTermCount"))
+                .containsExactly(2, 1);
+        assertThat(JsonPath.<List<String>>read(json, "$[*].projectTitle"))
+                .containsExactly("River desk", "Transit desk");
+    }
+
+    @Test
+    void globalSearchFiltersByFileCategoryEventTimeAndLocation() throws Exception {
+        MockHttpSession emma = login("emma");
+        String projectId = project(emma, "Global filter desk");
+
+        createText(emma, projectId, "Filtertoken9342 written brief", "Witness statement",
+                "2026-08-21T09:00:00Z", "Harbor District", List.of(), "global-filter-text");
+
+        Upload image = upload(emma, "evidence.jpg", "image/jpeg", "image-evidence".getBytes());
+        Upload audio = upload(emma, "interview.mp3", "audio/mpeg", "audio-evidence".getBytes());
+        Upload video = upload(emma, "dispatch.mp4", "video/mp4", "video-evidence".getBytes());
+        String mediaMaterialId = JsonPath.read(createFile(emma, projectId,
+                "Filtertoken9342 field media", List.of(image.id(), audio.id(), video.id()), "global-filter-media"), "$.id");
+
+        Upload document = upload(emma, "brief.pdf", "application/pdf", "pdf-evidence".getBytes());
+        String otherMaterialId = JsonPath.read(createFile(emma, projectId,
+                "Filtertoken9342 source document", List.of(document.id()), "global-filter-other"), "$.id");
+
+        assertGlobalFileType(emma, "IMAGE", mediaMaterialId);
+        assertGlobalFileType(emma, "AUDIO", mediaMaterialId);
+        assertGlobalFileType(emma, "VIDEO", mediaMaterialId);
+        assertGlobalFileType(emma, "OTHER", otherMaterialId);
+
+        MvcResult text = mvc.perform(get("/api/v1/materials/search").session(emma)
+                        .param("q", "filtertoken9342")
+                        .param("fileType", "TEXT")
+                        .param("eventFrom", "2026-08-21T00:00:00Z")
+                        .param("eventTo", "2026-08-22T00:00:00Z")
+                        .param("location", "harbor"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<String>>read(text.getResponse().getContentAsString(), "$[*].title"))
+                .containsExactly("Filtertoken9342 written brief");
+
+        MvcResult locationOnlyKeyword = mvc.perform(get("/api/v1/materials/search").session(emma)
+                        .param("q", "harbor district").param("fileType", "TEXT"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<Object>>read(locationOnlyKeyword.getResponse().getContentAsString(), "$"))
+                .isEmpty();
+    }
+
+    private void assertGlobalFileType(MockHttpSession session, String fileType, String expectedId) throws Exception {
+        MvcResult result = mvc.perform(get("/api/v1/materials/search").session(session)
+                        .param("q", "filtertoken9342").param("fileType", fileType))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(JsonPath.<List<String>>read(result.getResponse().getContentAsString(), "$[*].id"))
+                .containsExactly(expectedId);
+    }
+
     private String createText(MockHttpSession session, String projectId, String title, String text,
                               String eventTime, String location, List<String> tags, String key) throws Exception {
         String event = eventTime == null ? "null" : "\"" + eventTime + "\"";
@@ -200,6 +285,21 @@ class SearchApiTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"%s\"}".formatted(title)))
                 .andExpect(status().isCreated()).andReturn();
         return JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+    }
+
+    private String createFile(MockHttpSession session, String projectId, String title,
+                              List<String> uploadIntentIds, String key) throws Exception {
+        String intentJson = uploadIntentIds.stream()
+                .map(id -> "\"" + id + "\"")
+                .collect(Collectors.joining(","));
+        MvcResult result = mvc.perform(post("/api/v1/materials/file").session(session)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"projectId\":\"%s\",\"title\":\"%s\",\"uploadIntentIds\":[%s]}"
+                                .formatted(projectId, title, intentJson)))
+                .andExpect(status().isCreated()).andReturn();
+        return result.getResponse().getContentAsString();
     }
 
     private Upload upload(MockHttpSession session, String name, String mime, byte[] bytes) throws Exception {

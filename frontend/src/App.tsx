@@ -6,6 +6,7 @@ import { LoginPage } from './auth/LoginPage'
 import { ProfilePage } from './auth/ProfilePage'
 import { Layout, PageState } from './components/Layout'
 import { MaterialPage } from './materials/MaterialPage'
+import { MaterialSearchPage } from './materials/MaterialSearchPage'
 import { NewMaterialPage } from './materials/NewMaterialPage'
 import { VersionEditorPage } from './materials/VersionEditorPage'
 import { ProjectDetailPage } from './projects/ProjectDetailPage'
@@ -27,6 +28,7 @@ export function App() {
         <Route path="/register" element={<CreateAccountPage />} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
+        <Route path="/search" element={<RequireAuth><MaterialSearchPage /></RequireAuth>} />
         <Route path="/projects/:id" element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
         <Route path="/projects/:id/new" element={<RequireAuth><NewMaterialPage /></RequireAuth>} />
         <Route path="/materials/:id" element={<RequireAuth><MaterialPage /></RequireAuth>} />

@@ -143,7 +143,7 @@ File bytes travel directly between the browser and S3/MinIO using short-lived pr
 - Desktop and Pixel 7 emulation are automated; a real phone file picker, device permissions, and LAN/TLS routing remain manual acceptance checks.
 - No native iOS/Android app; use the responsive web URL.
 - No teams, roles, administrator workflow, notifications, or cross-project provenance tracking.
-- Search is current-version keyword/filter search, not semantic/vector search, and does not search historical versions.
+- Global search uses comma-separated OR substring terms and ranks materials by the number of distinct matched terms. It is not typo-correcting or semantic/vector search, and it does not search historical versions.
 - AI analysis applies to images only. Local AI output is deterministic demo data.
 - The local H2 database is in memory and resets when the process stops.
 - Version history is linear; only the material owner can append a version.

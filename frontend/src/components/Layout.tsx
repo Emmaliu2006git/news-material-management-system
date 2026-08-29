@@ -38,6 +38,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const navigation = (
     <nav id="primary-navigation" aria-label="Primary" className="primary-nav">
       <Link to="/projects">Projects</Link>
+      <Link to="/search">Search</Link>
       <Link
         className="user-chip"
         to="/profile"
