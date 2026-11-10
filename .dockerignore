@@ -2,7 +2,6 @@
 .idea
 .vscode
 .tools
-.superpowers
 .local-data
 .playwright-browsers
 target

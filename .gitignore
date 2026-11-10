@@ -1,7 +1,6 @@
 .idea/
 .vscode/
 .DS_Store
-.superpowers/
 target/
 frontend/node_modules/
 frontend/dist/
