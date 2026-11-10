@@ -34,12 +34,23 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponse rename(UUID projectId, UUID requesterId, ProjectRequest request) {
-        ReportingProject project = projects.findById(projectId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "Project was not found"));
-        if (!project.getCreatedBy().getId().equals(requesterId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission for this action");
-        }
+        ReportingProject project = find(projectId);
+        requireCreator(project, requesterId);
         project.rename(request.title().trim());
         return ProjectResponse.from(project);
+    }
+
+    private ReportingProject find(UUID projectId) {
+        return projects.findById(projectId).orElseThrow(ProjectService::projectNotFound);
+    }
+
+    private static ApiException projectNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "Project was not found");
+    }
+
+    private static void requireCreator(ReportingProject project, UUID requesterId) {
+        if (!project.getCreatedBy().getId().equals(requesterId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only the project creator can rename this project");
+        }
     }
 }

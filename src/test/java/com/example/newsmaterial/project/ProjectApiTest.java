@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -75,6 +76,20 @@ class ProjectApiTest {
                 .andExpect(jsonPath("$.message").exists())
                 .andExpect(jsonPath("$.requestId").exists())
                 .andExpect(jsonPath("$.details").isArray());
+    }
+
+    @Test
+    void projectDeletionIsNotSupported() throws Exception {
+        MockHttpSession emma = login("emma");
+        MvcResult created = mockMvc.perform(post("/api/v1/projects").session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Permanent flood desk\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        String projectId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(delete("/api/v1/projects/{id}", projectId).session(emma)
+                        .with(SecurityMockMvcRequestPostProcessors.csrf()))
+                .andExpect(status().isMethodNotAllowed());
     }
     @Test
     @org.springframework.test.annotation.DirtiesContext(methodMode = org.springframework.test.annotation.DirtiesContext.MethodMode.BEFORE_METHOD)

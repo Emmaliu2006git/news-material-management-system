@@ -66,7 +66,10 @@ describe('authentication shell', () => {
     expect(await screen.findByText('Newsroom Materials')).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /projects/i })).toHaveAttribute('href', '/projects')
-    expect(screen.getByRole('link', { name: /search/i })).toHaveAttribute('href', '/search')
+    const searchLink = screen.getByRole('link', { name: /search/i })
+    expect(searchLink).toHaveAttribute('href', '/search')
+    expect(searchLink).toHaveClass('search-nav-link')
+    expect(searchLink.querySelector('svg')).toHaveClass('search-nav-link__icon')
     expect(screen.getByRole('button', { name: /log out/i })).toBeInTheDocument()
   })
 
@@ -360,6 +363,22 @@ describe('projects and current-material discovery', () => {
     expect(screen.getByRole('link', { name: 'Street evidence' })).toBeInTheDocument()
     expect(screen.queryByRole('form', { name: /material search/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^search$/i })).not.toBeInTheDocument()
+  })
+
+  it('does not offer project deletion, including to the project creator', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/projects/project-flood/materials')) return json([])
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    renderRoute('/projects/project-flood')
+
+    await screen.findByRole('heading', { name: 'Downtown flood' })
+    expect(screen.queryByRole('button', { name: /^delete project$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   })
 
   it('shows a loading state and prevents another submission while a search is running', async () => {

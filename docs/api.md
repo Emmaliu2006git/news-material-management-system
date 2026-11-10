@@ -139,7 +139,11 @@ Downloading a file and later uploading it creates an independent FileAsset; no p
 
 ### Rename a project
 
-`PATCH /api/v1/projects/{projectId}` takes the same body and returns `200 OK`. Only the project creator can rename. There is no delete endpoint.
+`PATCH /api/v1/projects/{projectId}` takes the same body and returns `200 OK`. Only the project creator can rename.
+
+### Deletion boundary
+
+The API does not expose DELETE endpoints for projects, materials, or versions. This preserves reporting evidence and complete version histories.
 
 ## Material field model
 
@@ -346,7 +350,7 @@ Required: `projectId`, nonblank `title` (maximum 240 after trimming), and a capa
 ]
 ```
 
-Select `GET /api/v1/materials/{id}/versions/{number}` for one complete read-only snapshot. Pagination is intentionally deferred for the two-week demo scope.
+Select `GET /api/v1/materials/{id}/versions/{number}` for one complete read-only snapshot. The current API does not paginate version history.
 
 ### One historical version
 

@@ -30,7 +30,7 @@ From the repository root:
 ./scripts/dev.sh
 ```
 
-Open `http://127.0.0.1:5173`. The script installs the locked frontend dependencies, starts Spring Boot with the local H2/filesystem profile on port 8080, waits for health, and starts Vite with an API proxy. Local data is disposable.
+Open `http://localhost:5173`. The script installs the locked frontend dependencies, starts Spring Boot with the local H2/filesystem profile on port 8080, waits for health, and starts Vite with an API proxy. Local data is disposable.
 
 ## Packaged same-origin demo
 
@@ -41,7 +41,7 @@ java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
   --app.analysis.scheduling-enabled=true
 ```
 
-Open `http://127.0.0.1:8080`. Maven runs locked frontend install, type checking, unit tests, and production build before copying the SPA into the executable JAR and running backend tests.
+Open `http://localhost:8080`. Maven runs locked frontend install, type checking, unit tests, and production build before copying the SPA into the executable JAR and running backend tests.
 
 ## Demo accounts
 

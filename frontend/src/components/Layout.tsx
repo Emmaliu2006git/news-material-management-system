@@ -38,7 +38,13 @@ export function Layout({ children }: { children: ReactNode }) {
   const navigation = (
     <nav id="primary-navigation" aria-label="Primary" className="primary-nav">
       <Link to="/projects">Projects</Link>
-      <Link to="/search">Search</Link>
+      <Link className="search-nav-link" to="/search">
+        <svg className="search-nav-link__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="m16 16 4 4" />
+        </svg>
+        <span>Search</span>
+      </Link>
       <Link
         className="user-chip"
         to="/profile"

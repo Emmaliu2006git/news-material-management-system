@@ -1,52 +1,48 @@
-# Adopt a Spring Boot, PostgreSQL, and S3 Architecture for the Internal News Material System
+# News Material Management System - Design Document
 
 | Field | Value |
 |---|---|
-| Status | Draft — ready with named open decisions |
-| Author / DRI | [owner needed] |
-| Decision owner | [owner needed] |
-| Reviewers | Mentor; additional reviewers [owner needed] |
+| Status | Final |
+| Owner | Emma Liu |
+| Mentor | ABX |
 | Last updated | 2026-08-29 |
-| Decision deadline | Before implementation begins [date needed] |
 
 ## 1. Executive Summary
 
-This document proposes a responsive internal web application for organizing news materials by reporting project. The selected architecture follows the mentor-discussed direction: React and TypeScript for the web UI, Spring Boot for the backend, PostgreSQL for metadata/version/search state, private Amazon S3 for file bytes, and an image-capable AI API for per-image descriptions and tags.
+The News Material Management System is a responsive internal newsroom web application used through desktop and mobile browsers; it is not a native mobile application. It groups independently owned text notes, photographs, audio, video, and documents under reporting projects that represent news events.
 
-Each material has one owner and an immutable linear history. All authenticated users may view materials, files, and historical versions, while only the owner may create a new version. File bytes upload directly from the browser to S3 through pre-signed URLs. AI analysis runs after material creation and cannot block or invalidate the primary upload flow.
+Authenticated users can create projects, add their own materials, browse current materials, search across projects, download files, and inspect complete version histories. A material owner can publish a new immutable version, while other users can view or download that material and contribute separate materials to the same project. Search covers current versions only, and per-image analysis adds searchable descriptions and tags without blocking material creation.
 
-Reviewers are asked to approve this architecture and resolve the open decisions before their dependent implementation begins.
+Projects, materials, and versions cannot be deleted through the product. This boundary preserves traceability and keeps the ownership and version model intentionally simple.
 
-## 2. Background and Scope
+## 2. Background and Current State
 
-Multiple journalists may independently contribute photographs, video, audio, documents, or written observations to one event such as `City Flood`. The system groups those independently owned materials under one reporting project and supports upload, management, search, download, and modification history.
+A single reporting event can produce evidence from several people and devices: written observations, photographs, recordings, video clips, and supporting documents. Without a shared structure, those items are difficult to discover, compare, and trace as they change.
 
-The user-provided constraint is a happy-path demo within one week and the agreed implementation within two weeks using AI-assisted development. The design keeps direct S3 upload, multi-file materials, linear version history, current-version search, and image AI enrichment. Native apps, media editing, complex roles, team notifications, Kafka, collaborative editing, branches, merges, semantic vector search, and hard deletion are excluded.
+A reporting project is the shared event container. Each material inside it remains independently owned, records its creator and creation time, and exposes a complete linear history. Users can browse a project's current materials directly or use the global search page to find current material across all projects.
 
-## 3. Goals and Acceptance Criteria
+The application must keep original and historical information inspectable while allowing a material owner to publish corrected or expanded snapshots. AI-generated image metadata is supplemental search information and never replaces user-authored content or source files.
+
+## 3. Goals and Non-Goals
 
 ### Goals
 
-- Organize TEXT and FILE materials under shared reporting projects.
-- Let every authenticated user view all materials and add independently owned materials.
-- Support mobile and desktop browser upload, viewing, download, and cross-project search.
-- Preserve immutable, owner-only, full-snapshot versions.
-- Search only each material's current version.
-- Associate AI metadata with the exact image FileAsset that produced it.
-- Keep AI failure separate from material creation.
+- Organize TEXT and FILE materials under reporting projects.
+- Let authenticated users browse all current materials and add independently owned materials.
+- Provide one responsive browser experience for desktop and mobile use.
+- Preserve immutable, owner-controlled, full-snapshot version histories.
+- Search current versions across all projects with focused filters and relevance ranking.
+- Associate AI descriptions and tags with the exact image that produced them.
+- Keep upload, versioning, search, and AI failure states understandable to users.
 
-### Acceptance Criteria
+### Non-Goals
 
-| Outcome | Acceptance condition |
-|---|---|
-| TEXT flow | User creates, reopens, searches, and versions a valid TEXT material |
-| FILE flow | User uploads multiple files directly to S3 and reopens the FILE material |
-| Ownership | Automated tests show zero successful non-owner writes |
-| History | Creating N+1 leaves N and its file set unchanged |
-| Search | Global comma-separated keywords use OR substring matching; results with more distinct matched terms rank first; text existing only in history does not match |
-| AI isolation | Material remains usable when image analysis fails |
-| Mobile | Upload succeeds in a supported real mobile browser |
-| Delivery | Demo within one week; agreed scope within two weeks |
+- A native iOS or Android application.
+- In-product photo, audio, video, or document editing.
+- Anonymous or public access.
+- Collaborative co-editing, branches, merges, or multiple owners for one material.
+- Tracking provenance after a user downloads a file and creates a separate material from it.
+- Deleting projects, materials, or versions through the application.
 
 ## 4. Requirements and Constraints
 
@@ -77,28 +73,29 @@ The user-provided constraint is a happy-path demo within one week and the agreed
 - Upload, version, AI, and search workflows expose structured status and logs.
 - The application is a modular monolith without Kafka or microservices.
 
-### Assumptions and Evidence Gaps
+### Fixed Product and Implementation Constraints
 
-| Item | Type | Validation | Due |
-|---|---|---|---|
-| One Spring Boot instance is enough for the demo | Assumption | Test expected concurrency | Before deployment |
-| Upload limits | Resolved | One policy, exposed by `/capabilities`; defaults 10 files, 50 MiB each, 200 MiB total | Implemented |
-| All authenticated users may create projects | Working assumption | Confirm with mentor | Before project API |
-| Project creator may rename; no deletion | Working assumption | Confirm with mentor | Before project API |
-| AI is generated once and not editable | Working assumption | Confirm AI lifecycle | Before AI work |
-| Search language behavior | Resolved | Comma-separated OR, case-insensitive substring matching, no typo correction; automated API/UI tests | Implemented |
+| Area | Final rule |
+|---|---|
+| Application shape | One same-origin responsive web application backed by a modular monolith |
+| Access | Authenticated internal users only |
+| Project permissions | Any authenticated user can create a project; only its creator can rename it |
+| Deletion | No project, material, or version deletion is exposed |
+| Upload limits | One server policy exposed by `/capabilities`; defaults are 10 files, 50 MiB each, and 200 MiB total |
+| AI lifecycle | Analysis is per image, asynchronous, and supplemental; failure cannot invalidate a material |
+| Search language | Comma-separated OR terms, case-insensitive substring matching, no typo correction |
 
 ## 5. Architecture Decision
 
 | Criterion | React + Spring Boot | Next.js full-stack | React + FastAPI |
 |---|---|---|---|
-| Mentor alignment | Strong | Weak | Weak |
-| Demo effort | Medium | Lowest | Medium |
+| Fit with the implemented codebase | Strong | Requires a rewrite | Requires a rewrite |
 | Transaction boundaries | Strong | Adequate | Strong |
-| S3/PostgreSQL support | Strong | Strong | Strong |
+| S3 and PostgreSQL integration | Strong | Strong | Strong |
+| Same-origin deployment | Straightforward | Straightforward | Requires separate integration |
 | Selected | **Yes** | No | No |
 
-Vite builds the React SPA. Spring Boot serves the static build and `/api/v1` from one origin, avoiding CORS and cross-site-session complexity. Spring Boot 4.1.x is a current stable line; lock the patch version at implementation kickoff. [Spring Boot](https://spring.io/projects/spring-boot/)
+Vite builds the React SPA. Spring Boot serves the static build and `/api/v1` from one origin, avoiding CORS and cross-site-session complexity. The implementation pins its framework and dependency versions in the repository.
 
 ```mermaid
 flowchart LR
@@ -149,13 +146,13 @@ Use Spring Security username/password authentication with an HTTP session. [Auth
 | Action | Rule |
 |---|---|
 | View projects/materials/files/history | Any authenticated user |
-| Create project | Any authenticated user, pending confirmation |
-| Rename project | Creator, pending confirmation |
+| Create project | Any authenticated user |
+| Rename project | Project creator only |
 | Create material | Any authenticated user; caller becomes owner |
 | Create version | Material owner only |
 | Request download URL | Any authenticated user |
 | Retry AI analysis | Material owner only |
-| Hard delete | No initial endpoint |
+| Delete project, material, or version | Not supported |
 
 Backend authorization is mandatory even if the UI hides an action. Session cookies use `HttpOnly`, `Secure`, and `SameSite=Lax`; state-changing requests retain CSRF protection.
 
@@ -351,9 +348,9 @@ sequenceDiagram
 
 ## 11. Image Analysis and Search
 
-A committed image FileAsset receives a `PENDING` ImageAnalysis row. A scheduled worker claims pending rows, reads the private image from S3, calls the AI provider, validates structured JSON, and changes the status to `COMPLETED`. Provider failure schedules retry; exhausted retries produce `FAILED`. The material remains usable in every state. **Proposed target:** three automatic attempts before owner-controlled retry.
+A committed image FileAsset receives a `PENDING` ImageAnalysis row. A scheduled worker claims pending rows, reads the private image, calls the configured provider, validates structured output, and changes the status to `COMPLETED`. Provider failure persists retry or failed state, and the material remains usable in every state.
 
-The OpenAI Responses API supports image input analysis. [OpenAI Images and Vision](https://developers.openai.com/api/docs/guides/images-vision)
+The provider is configuration-driven. Local and packaged demos use a deterministic provider so the workflow runs without external credentials; the cloud profile can use the OpenAI Responses adapter for image descriptions and tags.
 
 Search indexes only current versions. Material-level rows contain title, text body or file text, manual tags, and location for the backward-compatible project endpoint. File-level rows contain AI description and AI tags. Global search constructs its keyword corpus from title, text, and tags while deliberately excluding location, which remains a separate global filter. Each row stores material ID, current version ID, optional file ID, source type, and content. Queries join against `Material.currentVersionId`, preventing stale historical matches. AI matches return `matchedFileId` so the UI can highlight the image.
 
@@ -363,15 +360,18 @@ Global filters are event-time range, case-insensitive location substring, and a 
 
 ## 12. Frontend and API
 
-Pages include login, project list/detail, global material search, new material, current material, owner edit, version timeline, and historical version. Project detail immediately lists current materials; it does not contain the global filter form. The global Search page is available from primary navigation and searches across all projects. Current and historical views share `MaterialSnapshotView`; historical mode adds a read-only banner and disables editing. TEXT and FILE use type-specific content renderers.
+Pages include account registration, login, profile/password update, project list/detail, global material search, new material, current material, owner edit, version timeline, and historical version. Project detail immediately lists current materials; it does not contain the global filter form. The global Search page is available from primary navigation, uses a labeled magnifier icon for visibility, and searches across all projects. Current and historical views share `MaterialSnapshotView`; historical mode adds a read-only banner and disables editing. TEXT and FILE use type-specific content renderers.
 
 Core `/api/v1` endpoints:
 
 | Method/path | Purpose | Access |
 |---|---|---|
+| `POST /auth/register` | Create account and start session | Public |
 | `POST /auth/login` | Start session | Public |
+| `POST /auth/password` | Change password after verifying the current password | Authenticated |
 | `GET /capabilities` | Active upload count/size/total limits | Authenticated |
 | `GET/POST /projects` | List/create projects | Authenticated |
+| `PATCH /projects/{id}` | Rename a project | Creator |
 | `GET /projects/{id}/materials` | List current materials in one project | Authenticated |
 | `GET /materials/search` | Ranked current-material search across projects | Authenticated |
 | `POST /uploads/intents` | Create upload URLs | Authenticated |
@@ -384,7 +384,7 @@ Core `/api/v1` endpoints:
 | `POST /files/{id}/download-url` | Authorized download | Authenticated |
 | `POST /files/{id}/analysis/retry` | Retry AI | Owner |
 
-No DELETE endpoint exists initially. Expected errors include `401`, `403`, `404`, `409`, `413`, `415`, `422`, `502`, and `503`, returned in a stable JSON envelope with `code`, `message`, `requestId`, and `details`.
+No project, material, or version DELETE endpoint exists. Expected errors include `401`, `403`, `404`, `409`, `413`, `415`, `422`, `502`, and `503`, returned in a stable JSON envelope with `code`, `message`, `requestId`, and `details`.
 
 ## 13. Reliability, Security, and Observability
 
@@ -399,53 +399,45 @@ No DELETE endpoint exists initially. Expected errors include `401`, `403`, `404`
 | Stale search rows | Current-version join excludes them; reconciliation rebuilds |
 | PostgreSQL or S3 unavailable | Fail safely without mutating version state |
 
-Security requirements include HTTPS, adaptive password hashing, HttpOnly/Secure session cookies, CSRF protection, private S3, least-privilege IAM, authorization before pre-signing, random immutable object keys, size/type/checksum validation, secret management, and exclusion of signed URLs or content from logs. Real newsroom images require AI-provider privacy approval; use synthetic images until approved. Malware scanning is outside the two-week scope, so the system is not production-ready for untrusted public uploads.
+Security requirements include HTTPS, adaptive password hashing, HttpOnly/Secure session cookies, CSRF protection, private S3, least-privilege IAM, authorization before pre-signing, random immutable object keys, size/type/checksum validation, secret management, and exclusion of signed URLs or content from logs. Real newsroom images require AI-provider privacy approval; use synthetic images until approved. Malware scanning is not implemented, so the system is not production-ready for untrusted public uploads.
 
 Structured logs and Actuator metrics track request IDs, users, materials, versions, uploads, analyses, HTTP failures, version conflicts, AI backlog, search failures, DB pool use, and dependency errors. Logs never contain content bodies, file bytes, credentials, sessions, or signed URLs.
 
-## 14. Testing and Rollout
+## 14. Testing and Validation
 
-Unit tests cover type invariants, strict request unions, framework error envelopes, upload-policy alignment, session fixation/cookies, authorization, snapshots, and AI state transitions. PostgreSQL/schema tests cover atomic v1 creation, the deferred current-version ownership FK, immutable N+1 creation, conflicts, permissions, current-only search, and idempotency. The packaged Playwright journey runs the same login, TEXT/FILE creation, multi-file upload, history, download, search, AI, and authorization flow in Desktop Chrome and emulated Pixel 7; a real-device picker remains manual.
+Unit tests cover type invariants, strict request unions, framework error envelopes, upload-policy alignment, session fixation and cookies, authorization, snapshots, search ranking, and AI state transitions. Database tests cover atomic v1 creation, current-version ownership, immutable N+1 creation, conflicts, permissions, current-only search, and idempotency.
 
-Rollout phases:
+The packaged end-to-end journey covers account access, TEXT and FILE creation, multi-file upload, history, download, search, AI isolation, and owner authorization in desktop Chromium and an emulated mobile browser. Manual validation remains necessary for a physical mobile browser, cloud credentials, private bucket policy, and production persistence.
 
-1. Resolve schema- and permission-changing decisions.
-2. Build login plus TEXT vertical slice.
-3. Add S3 multi-file upload and download.
-4. Add immutable version creation and history.
-5. Add current-only search.
-6. Add durable AI worker and retry.
-7. Verify mobile flow, security, logs, tests, and hosted rollback.
+Schema migrations remain expand-only. Projects, materials, versions, and attached file objects have no user-facing deletion path.
 
-Migrations remain expand-only during development. Initial scope contains no irreversible material, version, or S3 deletion.
+## 15. Risks and Mitigations
 
-## 15. Risks and Open Decisions
+| Risk | Mitigation |
+|---|---|
+| Interrupted or abandoned uploads | Persist upload intents, verify objects before finalization, and clean only expired unattached objects |
+| Concurrent owner edits | Require the expected current version and return `409 VERSION_CONFLICT` |
+| Stale search data | Join through the authoritative current version and support index reconciliation |
+| AI provider failure or privacy exposure | Keep AI supplemental, persist failure state, use deterministic local output, and require approved credentials and data policy for external analysis |
+| Malicious files | Restrict access and formats; add malware scanning before accepting untrusted public uploads |
+| Accidental loss of reporting evidence | Expose no deletion endpoint for projects, materials, or versions |
+| Ephemeral local data | Use the PostgreSQL profile and persistent object storage for shared or long-lived deployments |
 
-| Risk/decision | Recommendation | Due |
-|---|---|---|
-| Spring Boot plus React exceeds demo budget | Build one thin vertical slice first | Immediately |
-| Project create/rename permissions | All create; creator renames; no delete | Before project API |
-| File count/size/MIME limits | Approve explicit demo limits | Before upload API |
-| Upload cleanup delay | Configurable delay after expiry | Before cleanup worker |
-| AI provider/privacy | OpenAI with synthetic demo images until approved | Before AI work |
-| AI retry and re-analysis | Three retries; no re-analysis initially | Before AI worker |
-| Material/version deletion | No delete initially | Before retention work |
-| Malware risk | Restrict demo users and formats | Before external use |
-| Deployment/PostgreSQL provider | Decide after local vertical slice; retain portability | Before hosted demo |
-
-## 16. Decision Log and Review Verdict
+## 16. Decision Log
 
 | Decision | Rationale |
 |---|---|
+| One responsive web application | Supports desktop and mobile browsers without a separate native app |
 | FILE and TEXT are the only material types | Keeps field rules explicit |
-| Owner-only linear version history | Traceability without merge complexity |
-| Complete read-only historical snapshots | Consistent audit and UI behavior |
+| Owner-only linear version history | Preserves traceability without merge complexity |
+| Complete read-only historical snapshots | Keeps audit and current views structurally consistent |
+| No project, material, or version deletion | Prevents accidental loss of reporting evidence |
 | Current-version-only global search | Avoids duplicate and obsolete results |
-| Comma-separated OR keyword matching | Broad discovery while keeping the input simple |
-| Rank by distinct matched terms, then event time | Put stronger matches first without rewarding repeated text |
-| Search outside project detail | Project pages remain browsable while one global form searches all projects |
-| ImageAnalysis belongs to image FileAsset | Preserves per-image association |
-| React + Spring Boot + PostgreSQL + S3 | Aligns with mentor architecture |
-| No Kafka | No initial workflow justifies a broker |
+| Comma-separated OR keyword matching | Supports broad discovery with one simple input |
+| Rank by distinct matched terms, then event time | Prioritizes stronger matches without rewarding repeated text |
+| Search outside project detail | Keeps project pages directly browsable while one global form searches all projects |
+| ImageAnalysis belongs to image FileAsset | Preserves the relationship between an image and its generated metadata |
+| React + Spring Boot + PostgreSQL + S3 | Provides explicit transaction boundaries, direct object upload, and a same-origin deployment |
+| No message broker | The current workflows do not require an additional distributed component |
 
-**Review verdict: Ready with named open decisions.** Architecture, ownership, version invariants, upload flow, search boundary, AI isolation, security, testing, and rollout are coherent. Project permissions, file limits, AI/privacy rules, and hosting must be resolved at their named gates.
+This document records the final product and implementation design. Changes to ownership, version immutability, current-only search, or the no-deletion boundary require an explicit design revision.

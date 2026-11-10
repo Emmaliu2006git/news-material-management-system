@@ -58,7 +58,7 @@ BACKEND_PID="$!"
 
 for attempt in $(seq 1 60); do
   if curl --silent --fail http://127.0.0.1:8080/actuator/health >/dev/null; then
-    echo "Backend ready at http://127.0.0.1:8080"
+    echo "Backend ready at http://localhost:8080"
     break
   fi
   kill -0 "${BACKEND_PID}" 2>/dev/null || fail "Backend exited before becoming ready."
@@ -66,5 +66,5 @@ for attempt in $(seq 1 60); do
   sleep 1
 done
 
-echo "Responsive web app: http://127.0.0.1:5173"
+echo "Responsive web app: http://localhost:5173"
 run_npm --prefix "${PROJECT_ROOT}/frontend" run dev -- --host 0.0.0.0

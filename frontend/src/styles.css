@@ -70,6 +70,18 @@ h3 { margin-bottom: .3rem; font-size: 1rem; }
 }
 .primary-nav { display: flex; align-items: center; gap: .65rem; }
 .primary-nav > a { display: none; font-weight: 600; text-decoration: none; }
+.primary-nav > .search-nav-link {
+  align-items: center;
+  gap: .42rem;
+  padding: .48rem .72rem;
+  border: 1px solid #b8cdbf;
+  border-radius: 999px;
+  color: var(--brand-dark);
+  background: #eaf4ed;
+}
+.search-nav-link:hover { border-color: var(--brand); background: #dceee3; }
+.search-nav-link__icon { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 2.2; }
+
 .site-message { width: min(calc(100% - 2rem), 1120px); margin-right: auto; margin-left: auto; }
 .user-chip {
   max-width: 8rem;
@@ -343,10 +355,10 @@ progress { width: 100%; accent-color: var(--brand); }
     border-bottom: 1px solid var(--line);
     background: var(--paper);
   }
-  .primary-nav > a { display: inline; }
+  .primary-nav > a { display: inline-flex; }
 }
 @media (min-width: 560px) {
-  .primary-nav > a { display: inline; }
+  .primary-nav > a { display: inline-flex; }
   .page-shell { padding-right: 1.5rem; padding-left: 1.5rem; }
   .page-heading--action { flex-direction: row; align-items: center; justify-content: space-between; }
   .inline-form { grid-template-columns: 1fr auto; align-items: end; }
