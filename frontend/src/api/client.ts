@@ -4,9 +4,9 @@ import type {
   ApiErrorBody,
   Capabilities,
   FileMaterialInput,
+  GlobalSearchFilters,
   Material,
   Project,
-  SearchFilters,
   SearchResult,
   TextMaterialInput,
   UploadFileSpec,
@@ -84,6 +84,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  register: (username: string, password: string) =>
+    apiRequest<User>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }, true),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiRequest<void>('/api/v1/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }, true),
   logout: () => apiRequest<void>('/api/v1/auth/logout', { method: 'POST' }, true),
   capabilities: () => apiRequest<Capabilities>('/api/v1/capabilities'),
   listProjects: () => apiRequest<Project[]>('/api/v1/projects'),
@@ -92,13 +102,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title }),
     }, true),
-  search: (projectId: string, filters: SearchFilters = {}) => {
+  projectMaterials: (projectId: string) =>
+    apiRequest<SearchResult[]>(`/api/v1/projects/${projectId}/materials`),
+  globalSearch: (filters: GlobalSearchFilters = {}) => {
     const query = new URLSearchParams()
     Object.entries(filters).forEach(([key, value]) => {
       if (value) query.set(key, value)
     })
     const suffix = query.size ? `?${query.toString()}` : ''
-    return apiRequest<SearchResult[]>(`/api/v1/projects/${projectId}/materials${suffix}`)
+    return apiRequest<SearchResult[]>(`/api/v1/materials/search${suffix}`)
   },
   material: (id: string) => apiRequest<Material>(`/api/v1/materials/${id}`),
   historicalMaterial: (id: string, number: number) =>

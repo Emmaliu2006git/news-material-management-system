@@ -25,6 +25,22 @@ async function login(page: Page, username: string) {
   }
 }
 
+async function navigateFromPrimary(page: Page, name: string) {
+  if (usesMobileNavigation(page)) {
+    const openNavigation = page.getByRole('button', { name: 'Open navigation' })
+    if (await openNavigation.isVisible()) {
+      await openNavigation.click()
+    }
+  }
+  await page.getByRole('link', { name, exact: true }).click()
+  if (usesMobileNavigation(page)) {
+    const closeNavigation = page.getByRole('button', { name: 'Close navigation' })
+    if (await closeNavigation.isVisible()) {
+      await closeNavigation.click()
+    }
+  }
+}
+
 test('packaged newsroom happy path preserves history, files, AI isolation, and ownership', async ({ page }) => {
   const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const projectTitle = `E2E flood ${suffix}`
@@ -69,7 +85,9 @@ test('packaged newsroom happy path preserves history, files, AI isolation, and o
   await expect(page.getByRole('heading', { name: textV2Title })).toBeVisible()
 
   await page.getByRole('link', { name: 'Project materials' }).click()
-  const query = page.getByLabel('Search current materials')
+  await expect(page.getByRole('link', { name: textV2Title })).toBeVisible()
+  await navigateFromPrimary(page, 'Search')
+  const query = page.getByLabel('Keywords')
   await query.fill(oldMarker)
   await page.getByRole('button', { name: 'Search' }).click()
   await expect(page.getByText('0 found')).toBeVisible()
@@ -77,6 +95,7 @@ test('packaged newsroom happy path preserves history, files, AI isolation, and o
   await page.getByRole('button', { name: 'Search' }).click()
   await expect(page.getByRole('link', { name: textV2Title })).toBeVisible()
 
+  await page.getByRole('link', { name: projectTitle, exact: true }).click()
   await page.getByRole('link', { name: 'Add material' }).click()
   await page.getByRole('radio', { name: /File material/ }).check()
   await page.getByLabel(/^Title/).fill(fileTitle)
@@ -115,10 +134,14 @@ test('packaged newsroom happy path preserves history, files, AI isolation, and o
   await download.delete()
 
   await page.getByRole('link', { name: 'Project materials' }).click()
+  await navigateFromPrimary(page, 'Search')
   await query.fill('demo-analysis')
   await page.getByRole('button', { name: 'Search' }).click()
-  await expect(page.getByRole('link', { name: fileTitle })).toBeVisible()
-  await expect(page.getByText('Matched an AI-analyzed image')).toBeVisible()
+  const matchedResult = page.locator('article').filter({
+    has: page.getByRole('link', { name: fileTitle }),
+  })
+  await expect(matchedResult).toBeVisible()
+  await expect(matchedResult.getByText('Matched an AI-analyzed image')).toBeVisible()
 
   if (usesMobileNavigation(page)) {
     await page.getByRole('button', { name: 'Open navigation' }).click()

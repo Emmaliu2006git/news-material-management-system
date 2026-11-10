@@ -30,7 +30,7 @@ From the repository root:
 ./scripts/dev.sh
 ```
 
-Open `http://127.0.0.1:5173`. The script installs the locked frontend dependencies, starts Spring Boot with the local H2/filesystem profile on port 8080, waits for health, and starts Vite with an API proxy. Local data is disposable.
+Open `http://localhost:5173`. The script installs the locked frontend dependencies, starts Spring Boot with the local H2/filesystem profile on port 8080, waits for health, and starts Vite with an API proxy. Local data is disposable.
 
 ## Packaged same-origin demo
 
@@ -41,7 +41,7 @@ java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
   --app.analysis.scheduling-enabled=true
 ```
 
-Open `http://127.0.0.1:8080`. Maven runs locked frontend install, type checking, unit tests, and production build before copying the SPA into the executable JAR and running backend tests.
+Open `http://localhost:8080`. Maven runs locked frontend install, type checking, unit tests, and production build before copying the SPA into the executable JAR and running backend tests.
 
 ## Demo accounts
 
@@ -143,7 +143,7 @@ File bytes travel directly between the browser and S3/MinIO using short-lived pr
 - Desktop and Pixel 7 emulation are automated; a real phone file picker, device permissions, and LAN/TLS routing remain manual acceptance checks.
 - No native iOS/Android app; use the responsive web URL.
 - No teams, roles, administrator workflow, notifications, or cross-project provenance tracking.
-- Search is current-version keyword/filter search, not semantic/vector search, and does not search historical versions.
+- Global search uses comma-separated OR substring terms and ranks materials by the number of distinct matched terms. It is not typo-correcting or semantic/vector search, and it does not search historical versions.
 - AI analysis applies to images only. Local AI output is deterministic demo data.
 - The local H2 database is in memory and resets when the process stops.
 - Version history is linear; only the material owner can append a version.

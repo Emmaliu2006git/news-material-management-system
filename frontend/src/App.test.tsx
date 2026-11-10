@@ -21,6 +21,14 @@ function renderRoute(route: string) {
   )
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((complete) => {
+    resolve = complete
+  })
+  return { promise, resolve }
+}
+
 describe('authentication shell', () => {
   it('shows a clear error for invalid credentials and supports a successful login', async () => {
     const api = installApi({ me: null })
@@ -58,6 +66,10 @@ describe('authentication shell', () => {
     expect(await screen.findByText('Newsroom Materials')).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /projects/i })).toHaveAttribute('href', '/projects')
+    const searchLink = screen.getByRole('link', { name: /search/i })
+    expect(searchLink).toHaveAttribute('href', '/search')
+    expect(searchLink).toHaveClass('search-nav-link')
+    expect(searchLink.querySelector('svg')).toHaveClass('search-nav-link__icon')
     expect(screen.getByRole('button', { name: /log out/i })).toBeInTheDocument()
   })
 
@@ -103,9 +115,129 @@ describe('authentication shell', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('navigation', { name: /primary/i })).toBeInTheDocument()
   })
+
+  it('creates an account from the login page and starts an authenticated session', async () => {
+    const api = installApi({ me: null })
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/me')) {
+        return json({ code: 'AUTHENTICATION_REQUIRED', message: 'Authentication required', requestId: 'req', details: [] }, 401)
+      }
+      if (url.endsWith('/auth/register')) {
+        return json({ id: 'user-new-reporter', username: 'new-reporter' }, 201)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/login')
+
+    await actor.click(await screen.findByRole('link', { name: /create account/i }))
+    expect(screen.getByRole('heading', { name: /create your account/i })).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/^username/i), 'new-reporter')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'strong-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('heading', { name: /reporting projects/i })).toBeInTheDocument()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/auth/register',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ username: 'new-reporter', password: 'strong-password' }),
+      }),
+    )
+  })
+
+  it('does not submit registration when password confirmation differs', async () => {
+    const api = installApi({ me: null })
+    const actor = userEvent.setup()
+    renderRoute('/register')
+
+    await actor.type(await screen.findByLabelText(/^username/i), 'new-reporter')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'different-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/passwords do not match/i)
+    expect(api).not.toHaveBeenCalledWith('/api/v1/auth/register', expect.anything())
+  })
+
+  it('explains the username rules and rejects unsupported special characters before submission', async () => {
+    const api = installApi({ me: null })
+    const actor = userEvent.setup()
+    renderRoute('/register')
+
+    expect(await screen.findByText(/allowed:.*letters.*numbers.*dots.*underscores.*hyphens/i)).toBeInTheDocument()
+    expect(screen.getByText(/not allowed:.*spaces.*other special characters/i)).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/^username/i), 'News@Desk')
+    await actor.type(screen.getByLabelText(/^password/i), 'strong-password')
+    await actor.type(screen.getByLabelText(/confirm password/i), 'strong-password')
+    await actor.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /username.*letters.*numbers.*dots.*underscores.*hyphens.*spaces.*special characters.*not allowed/i,
+    )
+    expect(api).not.toHaveBeenCalledWith('/api/v1/auth/register', expect.anything())
+  })
+
+  it('opens the signed-in profile and changes the password', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/password')) return Promise.resolve(new Response(null, { status: 204 }))
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/projects')
+
+    await actor.click(await screen.findByRole('link', { name: /profile for emma/i }))
+    expect(screen.getByRole('heading', { name: /your profile/i })).toBeInTheDocument()
+    expect(screen.getByText('emma')).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/current password/i), 'demo-password')
+    await actor.type(screen.getByLabelText(/^new password/i), 'updated-password')
+    await actor.type(screen.getByLabelText(/confirm new password/i), 'updated-password')
+    await actor.click(screen.getByRole('button', { name: /update password/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/password updated/i)
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/auth/password',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: 'demo-password', newPassword: 'updated-password' }),
+      }),
+    )
+  })
+
+  it('shows the server error when the current password is incorrect', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/auth/csrf')) return json({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN' })
+      if (url.endsWith('/auth/password')) {
+        return json({ code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect', requestId: 'req', details: [] }, 400)
+      }
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/profile')
+
+    await actor.type(await screen.findByLabelText(/current password/i), 'wrong-password')
+    await actor.type(screen.getByLabelText(/^new password/i), 'updated-password')
+    await actor.type(screen.getByLabelText(/confirm new password/i), 'updated-password')
+    await actor.click(screen.getByRole('button', { name: /update password/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/current password is incorrect/i)
+  })
 })
 
-describe('projects and current-only search', () => {
+describe('projects and current-material discovery', () => {
   it('lists and creates reporting projects', async () => {
     const api = installApi()
     api.mockImplementation((input, init) => {
@@ -133,46 +265,13 @@ describe('projects and current-only search', () => {
     expect(createdProjectLink).toHaveClass('project-card')
   })
 
-  it('submits current-version filters and marks an AI image match', async () => {
-    const api = installApi({
-      search: [{
-        id: 'material-file',
-        projectId: project.id,
-        ownerId: 'user-emma',
-        ownerUsername: 'emma',
-        type: 'FILE',
-        materialCreatedTime: '2026-08-22T14:05:00Z',
-        currentVersionId: 'version-file-1',
-        currentVersionNumber: 1,
-        title: 'Street evidence',
-        eventTime: null,
-        location: 'East entrance',
-        manualTags: ['field'],
-        matchedFileId: 'file-photo',
-      }],
-    })
-    const user = userEvent.setup()
-    renderRoute('/projects/project-flood')
-
-    expect(await screen.findByRole('heading', { name: 'Downtown flood' })).toBeInTheDocument()
-    await user.type(screen.getByLabelText(/search current materials/i), 'flooded street')
-    await user.selectOptions(screen.getByLabelText(/material type/i), 'FILE')
-    await user.click(screen.getByRole('button', { name: /^search$/i }))
-
-    expect(await screen.findByRole('link', { name: 'Street evidence' })).toBeInTheDocument()
-    expect(screen.getByText(/matched an ai-analyzed image/i)).toBeInTheDocument()
-    expect(api).toHaveBeenCalledWith(
-      expect.stringContaining('q=flooded+street'),
-      expect.objectContaining({ credentials: 'include' }),
-    )
-  })
-
-  it('composes every supported filter with inclusive date boundaries and owner choices from initial results', async () => {
+  it('searches current materials across projects with the focused filters and file categories', async () => {
     const requests: string[] = []
     const results = [
       {
         id: 'material-file',
         projectId: project.id,
+        projectTitle: project.title,
         ownerId: 'user-emma',
         ownerUsername: 'emma',
         type: 'FILE',
@@ -183,46 +282,29 @@ describe('projects and current-only search', () => {
         eventTime: '2026-08-21T12:00:00Z',
         location: 'East entrance',
         manualTags: ['field'],
-        matchedFileId: null,
-      },
-      {
-        id: 'material-text',
-        projectId: project.id,
-        ownerId: 'user-alex',
-        ownerUsername: 'alex',
-        type: 'TEXT',
-        materialCreatedTime: '2026-08-20T10:00:00Z',
-        currentVersionId: 'version-text-2',
-        currentVersionNumber: 2,
-        title: 'River update',
-        eventTime: null,
-        location: null,
-        manualTags: [],
-        matchedFileId: null,
+        matchedFileId: 'file-photo',
+        matchedTermCount: 2,
       },
     ]
-    const api = installApi({ search: results })
+    const api = installApi()
     api.mockImplementation((input) => {
       const url = String(input)
       if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
       if (url.endsWith('/projects')) return json([project])
-      if (url.includes('/projects/project-flood/materials')) {
+      if (url.includes('/materials/search')) {
         requests.push(url)
         return json(results)
       }
       return json({}, 404)
     })
     const actor = userEvent.setup()
-    renderRoute('/projects/project-flood')
+    renderRoute('/search')
 
-    await actor.selectOptions(await screen.findByLabelText(/owner/i), 'user-emma')
-    await actor.type(screen.getByLabelText(/search current materials/i), 'flood warning')
-    await actor.selectOptions(screen.getByLabelText(/material type/i), 'FILE')
+    expect(await screen.findByRole('heading', { name: /search materials/i })).toBeInTheDocument()
+    await actor.type(screen.getByLabelText(/^keywords$/i), 'flood warning, bridge')
+    await actor.selectOptions(screen.getByLabelText(/file type/i), 'AUDIO')
     await actor.type(screen.getByLabelText(/^location$/i), 'East entrance')
-    await actor.type(screen.getByLabelText(/^tag$/i), 'field')
     const dateFilters = [
-      [screen.getByLabelText(/material created from/i), '08/01/2026'],
-      [screen.getByLabelText(/material created to/i), '08/02/2026'],
       [screen.getByLabelText(/event time from/i), '08/03/2026'],
       [screen.getByLabelText(/event time to/i), '08/04/2026'],
     ] as const
@@ -235,16 +317,109 @@ describe('projects and current-only search', () => {
 
     const query = new URL(requests.at(-1)!, 'http://localhost').searchParams
     expect(Object.fromEntries(query)).toEqual({
-      q: 'flood warning',
-      materialType: 'FILE',
-      ownerId: 'user-emma',
-      createdFrom: '2026-08-01T00:00:00.000Z',
-      createdTo: '2026-08-02T23:59:59.999Z',
+      q: 'flood warning, bridge',
+      fileType: 'AUDIO',
       eventFrom: '2026-08-03T00:00:00.000Z',
       eventTo: '2026-08-04T23:59:59.999Z',
       location: 'East entrance',
-      tag: 'field',
     })
+    expect(screen.getByLabelText(/file type/i)).toContainHTML('<option value="IMAGE">Image</option>')
+    expect(screen.getByLabelText(/file type/i)).toContainHTML('<option value="VIDEO">Video</option>')
+    expect(screen.getByLabelText(/file type/i)).toContainHTML('<option value="AUDIO">Audio</option>')
+    expect(screen.getByLabelText(/file type/i)).toContainHTML('<option value="OTHER">Other file</option>')
+    expect(screen.queryByLabelText(/^tag$/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/owner/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/material created/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Street evidence' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Downtown flood' })).toHaveAttribute('href', '/projects/project-flood')
+    expect(screen.getByText(/matched 2 keywords/i)).toBeInTheDocument()
+    expect(screen.getByText(/matched an ai-analyzed image/i)).toBeInTheDocument()
+  })
+
+  it('shows the project material list immediately without an internal search form', async () => {
+    installApi({
+      search: [{
+        id: 'material-file',
+        projectId: project.id,
+        projectTitle: project.title,
+        ownerId: 'user-emma',
+        ownerUsername: 'emma',
+        type: 'FILE',
+        materialCreatedTime: '2026-08-22T14:05:00Z',
+        currentVersionId: 'version-file-1',
+        currentVersionNumber: 1,
+        title: 'Street evidence',
+        eventTime: null,
+        location: 'East entrance',
+        manualTags: ['field'],
+        matchedFileId: null,
+        matchedTermCount: 0,
+      }],
+    })
+    renderRoute('/projects/project-flood')
+
+    expect(await screen.findByRole('heading', { name: 'Downtown flood' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /current materials/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Street evidence' })).toBeInTheDocument()
+    expect(screen.queryByRole('form', { name: /material search/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^search$/i })).not.toBeInTheDocument()
+  })
+
+  it('does not offer project deletion, including to the project creator', async () => {
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url.endsWith('/projects/project-flood/materials')) return json([])
+      if (url.endsWith('/projects')) return json([project])
+      return json({}, 404)
+    })
+    renderRoute('/projects/project-flood')
+
+    await screen.findByRole('heading', { name: 'Downtown flood' })
+    expect(screen.queryByRole('button', { name: /^delete project$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('shows a loading state and prevents another submission while a search is running', async () => {
+    const pending = deferred<Response>()
+    const api = installApi()
+    api.mockImplementation((input) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) return json({ id: 'user-emma', username: 'emma' })
+      if (url === '/api/v1/materials/search') return json([])
+      if (url.includes('/materials/search?q=river')) return pending.promise
+      return json({}, 404)
+    })
+    const actor = userEvent.setup()
+    renderRoute('/search')
+
+    await actor.type(await screen.findByLabelText(/^keywords$/i), 'river')
+    const searchButton = screen.getByRole('button', { name: /^search$/i })
+    await actor.click(searchButton)
+
+    expect(searchButton).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(/loading materials/i)
+
+    pending.resolve(await json([{
+      id: 'material-text',
+      projectId: project.id,
+      projectTitle: project.title,
+      ownerId: 'user-emma',
+      ownerUsername: 'emma',
+      type: 'TEXT',
+      materialCreatedTime: '2026-08-22T14:05:00Z',
+      currentVersionId: 'version-text-2',
+      currentVersionNumber: 2,
+      title: 'River update',
+      eventTime: null,
+      location: null,
+      manualTags: [],
+      matchedFileId: null,
+      matchedTermCount: 1,
+    }]))
+    expect(await screen.findByRole('link', { name: 'River update' })).toBeInTheDocument()
+    expect(searchButton).toBeEnabled()
   })
 })
 

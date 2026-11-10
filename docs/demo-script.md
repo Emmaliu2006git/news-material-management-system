@@ -13,7 +13,7 @@ java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
   --app.analysis.scheduling-enabled=true
 ```
 
-Open `http://127.0.0.1:8080`.
+Open `http://localhost:8080`.
 
 Prepare two small synthetic PNG files:
 

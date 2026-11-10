@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -32,20 +34,44 @@ public class AuthApi {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository sessions;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
+    private final AccountService accounts;
 
     public AuthApi(AuthenticationManager authenticationManager, SecurityContextRepository sessions,
-                   SessionAuthenticationStrategy sessionAuthenticationStrategy) {
+                   SessionAuthenticationStrategy sessionAuthenticationStrategy, AccountService accounts) {
         this.authenticationManager = authenticationManager;
         this.sessions = sessions;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+        this.accounts = accounts;
     }
 
     @PostMapping("/login")
     LoginResponse login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                         HttpServletResponse response) {
+        return establishSession(body.username(), body.password(), request, response);
+    }
+
+    @PostMapping("/register")
+    ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest body,
+                                           HttpServletRequest request,
+                                           HttpServletResponse response) {
+        AppUser account = accounts.register(body.username(), body.password());
+        LoginResponse user = establishSession(account.getUsername(), body.password(), request, response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
+
+    @PostMapping("/password")
+    ResponseEntity<Void> changePassword(@AuthenticationPrincipal AuthenticatedUser user,
+                                        @Valid @RequestBody ChangePasswordRequest body) {
+        accounts.changePassword(user.id(), body.currentPassword(), body.newPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    private LoginResponse establishSession(String username, String password,
+                                           HttpServletRequest request,
+                                           HttpServletResponse response) {
         try {
             Authentication authentication = authenticationManager.authenticate(
-                    UsernamePasswordAuthenticationToken.unauthenticated(body.username(), body.password()));
+                    UsernamePasswordAuthenticationToken.unauthenticated(username, password));
             sessionAuthenticationStrategy.onAuthentication(authentication, request, response);
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
@@ -86,6 +112,22 @@ public class AuthApi {
     }
 
     record LoginRequest(@NotBlank String username, @NotBlank String password) {
+    }
+
+    record RegisterRequest(
+            @NotBlank
+            @Size(min = 3, max = 32)
+            @Pattern(
+                    regexp = "[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?",
+                    message = "Use letters, numbers, dots, underscores, or hyphens; "
+                            + "spaces and other special characters are not allowed")
+            String username,
+            @NotBlank @Size(min = 8, max = 72) String password) {
+    }
+
+    record ChangePasswordRequest(
+            @NotBlank String currentPassword,
+            @NotBlank @Size(min = 8, max = 72) String newPassword) {
     }
 
     record LoginResponse(UUID id, String username) {

@@ -22,7 +22,7 @@ Do not use the demo accounts or default Compose fallback passwords in a shared e
 ./scripts/dev.sh
 ```
 
-Open `http://127.0.0.1:5173`. The script performs a locked frontend install, starts the local backend on 8080, waits for health, then starts Vite with an API proxy.
+Open `http://localhost:5173`. The script performs a locked frontend install, starts the local backend on 8080, waits for health, then starts Vite with an API proxy.
 
 ### Packaged same-origin demo
 
@@ -33,7 +33,7 @@ java -jar target/news-material-management-system-0.0.1-SNAPSHOT.jar \
   --app.analysis.scheduling-enabled=true
 ```
 
-Open `http://127.0.0.1:8080`. The package embeds the built React application in the executable JAR.
+Open `http://localhost:8080`. The package embeds the built React application in the executable JAR.
 
 ### Full verification
 

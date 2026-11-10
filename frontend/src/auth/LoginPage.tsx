@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from './AuthContext'
 
@@ -48,6 +48,7 @@ export function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        <p className="auth-switch">New to the workspace? <Link to="/register">Create account</Link></p>
         {import.meta.env.DEV && (
           <p className="demo-hint">Local demo: <strong>emma</strong> / <strong>demo-password</strong></p>
         )}

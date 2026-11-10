@@ -1,4 +1,5 @@
 export type MaterialType = 'TEXT' | 'FILE'
+export type SearchFileType = 'ALL' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'OTHER'
 export type AnalysisStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
 export interface User {
@@ -100,6 +101,7 @@ export interface Material {
 export interface SearchResult {
   id: string
   projectId: string
+  projectTitle: string
   ownerId: string
   ownerUsername: string
   type: MaterialType
@@ -111,6 +113,7 @@ export interface SearchResult {
   location: string | null
   manualTags: string[]
   matchedFileId: string | null
+  matchedTermCount: number
 }
 
 export interface CommonMaterialInput {
@@ -167,14 +170,10 @@ export interface ApiErrorBody {
   details: string[]
 }
 
-export interface SearchFilters {
+export interface GlobalSearchFilters {
   q?: string
-  materialType?: MaterialType
-  ownerId?: string
-  createdFrom?: string
-  createdTo?: string
+  fileType?: SearchFileType
   eventFrom?: string
   eventTo?: string
   location?: string
-  tag?: string
 }

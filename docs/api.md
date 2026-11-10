@@ -139,7 +139,11 @@ Downloading a file and later uploading it creates an independent FileAsset; no p
 
 ### Rename a project
 
-`PATCH /api/v1/projects/{projectId}` takes the same body and returns `200 OK`. Only the project creator can rename. There is no delete endpoint.
+`PATCH /api/v1/projects/{projectId}` takes the same body and returns `200 OK`. Only the project creator can rename.
+
+### Deletion boundary
+
+The API does not expose DELETE endpoints for projects, materials, or versions. This preserves reporting evidence and complete version histories.
 
 ## Material field model
 
@@ -346,7 +350,7 @@ Required: `projectId`, nonblank `title` (maximum 240 after trimming), and a capa
 ]
 ```
 
-Select `GET /api/v1/materials/{id}/versions/{number}` for one complete read-only snapshot. Pagination is intentionally deferred for the two-week demo scope.
+Select `GET /api/v1/materials/{id}/versions/{number}` for one complete read-only snapshot. The current API does not paginate version history.
 
 ### One historical version
 
@@ -425,26 +429,27 @@ The version request is a strict union. TEXT accepts `textBody` and rejects `text
 
 `expectedCurrentVersion` is required. Version requests use the same 240-character title/location limits, nonblank 80-character tag-item limit, and trimming/null normalization as creation. If another write has advanced the material, the server returns `409 VERSION_CONFLICT`; reload current state before retrying.
 
-## Search current material
+## Browse and search current material
 
-`GET /api/v1/projects/{projectId}/materials` returns one result per matching Material, newest material first. It never searches historical versions.
+`GET /api/v1/projects/{projectId}/materials` returns the current version of every Material in one project. The project page calls it without filters so users can browse the list immediately. The endpoint retains its earlier optional filter parameters for compatibility, including location within its legacy `q` corpus, but the global Search page does not use them.
 
-Optional query parameters:
+`GET /api/v1/materials/search` searches current material versions across every project. An empty request returns all current materials. Optional query parameters:
 
 | Parameter | Behavior |
 | --- | --- |
-| `q` | Case-insensitive substring across current title, location, manual tags, TEXT body or FILE notes, and completed image AI text/tags |
-| `materialType` | Exact `TEXT` or `FILE` |
-| `ownerId` | Exact owner UUID |
-| `createdFrom`, `createdTo` | Inclusive Material-created-time bounds |
+| `q` | Comma-separated terms. Terms are trimmed, lowercased, de-duplicated, and combined with OR. Each term is a case-insensitive substring across current title, manual tags, TEXT body or FILE notes, and completed image AI description/tags. Location is not part of the keyword corpus |
+| `fileType` | `ALL`, `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, or `OTHER` |
 | `eventFrom`, `eventTo` | Inclusive event-time bounds; null event time does not match a bound |
 | `location` | Case-insensitive substring |
-| `tag` | Case-insensitive exact manual tag |
+
+`TEXT` selects TEXT materials. The other non-`ALL` categories select FILE materials by current-file MIME type. A multi-file material matches when any current file belongs to the selected category. `OTHER` means a current file whose MIME type is not image, video, or audio.
+
+A material matches when at least one keyword term matches. `matchedTermCount` is the number of distinct query terms found anywhere in that material's current search documents. Results sort by `matchedTermCount` descending, then event time descending with nulls last, then material-created time descending. This is literal substring matching, not typo correction; for example, `flo` matches `flood`, while `flod` does not.
 
 Example:
 
 ```http
-GET /api/v1/projects/22222222-2222-4222-8222-222222222222/materials?q=demo-analysis&materialType=FILE&location=river
+GET /api/v1/materials/search?q=flood,bridge&fileType=IMAGE&location=river
 ```
 
 ```json
@@ -452,6 +457,7 @@ GET /api/v1/projects/22222222-2222-4222-8222-222222222222/materials?q=demo-analy
   {
     "id": "33333333-3333-4333-8333-333333333333",
     "projectId": "22222222-2222-4222-8222-222222222222",
+    "projectTitle": "Downtown Flood",
     "ownerId": "11111111-1111-4111-8111-111111111111",
     "ownerUsername": "emma",
     "type": "FILE",
@@ -462,12 +468,13 @@ GET /api/v1/projects/22222222-2222-4222-8222-222222222222/materials?q=demo-analy
     "eventTime": null,
     "location": "River Street",
     "manualTags": ["evidence"],
-    "matchedFileId": "66666666-6666-4666-8666-666666666666"
+    "matchedFileId": "66666666-6666-4666-8666-666666666666",
+    "matchedTermCount": 2
   }
 ]
 ```
 
-`matchedFileId` is non-null only when an image-AI search row caused the match, allowing the UI to highlight that file.
+`matchedFileId` is non-null only when an image-AI search row caused the match, allowing the UI to highlight that file. Project-list responses use the same result shape with `matchedTermCount: 0` when no keyword query was supplied.
 
 ## Download and AI retry
 
